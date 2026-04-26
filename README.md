@@ -175,16 +175,19 @@ Or list it under `repos:` in [config/repos.yaml](config/repos.yaml) and use `--r
 | 1 | `prepare` | URL / local path / repos.yaml | Source code + CodeQL database + context CSVs |
 | 2 | `analyze` | CodeQL DB and/or source tree | SARIF findings |
 | 3 | `verify` | SARIF + CSVs | JSON verdicts + reasoning |
-| — | `report` | Verification results | Markdown report |
-| 4–7 | `build-sanitized` → `fuzz-run` | Verified C/C++ findings | Fuzz harnesses + crash results |
+| 4 | `report` | Verification results | Markdown report |
+| 5 | `build-sanitized` | Verified C/C++ findings | ASan/UBSan build manifest |
+| 6 | `extract-fuzz-context` | C/C++ source | Function signatures for harness generation |
+| 7 | `generate-fuzz-drivers` | Fuzz context + sanitized build | libFuzzer harnesses (compiled with `--build`) |
+| 8 | `fuzz-run` | Compiled harnesses | Crash files + triage results |
 
 Stages 2–3 accept `--local-path` to operate directly on an arbitrary directory.
 
 | Goal | Required stages | Optional |
 |---|---|---|
 | Static analysis only | 1, 2 | — |
-| LLM verification | 1, 2, 3 | — |
-| Fuzz confirmation (C/C++) | 1, 2, 3, 4, 5, 6 | 7 |
+| LLM verification | 1, 2, 3 | 4 (`report`) |
+| Fuzz confirmation (C/C++) | 1, 2, 3, 5, 6, 7, 8 | 4 (`report`) |
 
 ---
 

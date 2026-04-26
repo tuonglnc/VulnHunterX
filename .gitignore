@@ -2,9 +2,10 @@
 repos/
 output/
 .codeql_build.sh
-
+.github/
 # Env and build
 .env
+.mypy_cache/
 .venv/
 *.egg-info/
 build/
