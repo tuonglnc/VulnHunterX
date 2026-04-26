@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 VinSOC Cyber
+
 """CodeQL static analysis operations."""
 
 from __future__ import annotations

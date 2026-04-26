@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 VinSOC Cyber
+
 """Unit tests for benchmark resumable checkpoint / progress features.
 
 Covers:

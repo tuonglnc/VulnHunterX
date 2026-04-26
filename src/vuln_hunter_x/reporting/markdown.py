@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 VinSOC Cyber
+
 """Markdown report generation from verification results with i18n support."""
 
 from __future__ import annotations

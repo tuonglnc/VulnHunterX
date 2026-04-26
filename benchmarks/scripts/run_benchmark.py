@@ -1,4 +1,7 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 VinSOC Cyber
+
 """Main benchmark orchestrator.
 
 Usage examples:
@@ -174,23 +177,6 @@ def _load_dataset(name: str, limit: int, juliet_per_cwe: int = 20, langs: list[s
         raise FileNotFoundError(
             f"Juliet dataset not found at {ds_path}. "
             "Run: python benchmarks/scripts/setup_datasets.py --dataset juliet"
-        )
-
-    if name == "cvefixes":
-        db_path = DATASETS_DIR / "cvefixes" / "CVEfixes.db"
-        if not db_path.exists():
-            # Try .zip extraction artefact naming
-            for candidate in (DATASETS_DIR / "cvefixes").rglob("*.db"):
-                db_path = candidate
-                break
-        if db_path.exists():
-            from benchmarks.adapters.cvefixes_adapter import CVEfixesAdapter
-            return CVEfixesAdapter(db_path).load(limit=limit, langs=langs)
-        if fixture.exists():
-            return _load_fixture(fixture, limit=limit, langs=langs, cwes=cwes)
-        raise FileNotFoundError(
-            f"CVEfixes DB not found at {db_path}. "
-            "Run: python benchmarks/scripts/setup_datasets.py --dataset cvefixes"
         )
 
     if name == "diversevul":
@@ -485,7 +471,7 @@ def main() -> int:
     )
     parser.add_argument(
         "--dataset",
-        choices=["secllmholmes", "juliet", "cvefixes", "diversevul", "all"],
+        choices=["secllmholmes", "juliet", "diversevul", "all"],
         default="secllmholmes",
     )
     parser.add_argument(
@@ -506,7 +492,7 @@ def main() -> int:
         default=None,
         metavar="LANG",
         help=(
-            "CVEfixes only: filter by language(s). "
+            "Filter fixture entries by language(s). "
             "E.g. --lang c cpp python. Default: all languages."
         ),
     )
@@ -606,7 +592,7 @@ def main() -> int:
 
     # Determine datasets and approaches
     datasets = (
-        ["secllmholmes", "juliet", "cvefixes", "diversevul"]
+        ["secllmholmes", "juliet", "diversevul"]
         if args.dataset == "all"
         else [args.dataset]
     )

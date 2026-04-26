@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 VinSOC Cyber
+
 /**
  * @name Extract global variables
  * @description Extracts global and namespace-scope variables for context lookup

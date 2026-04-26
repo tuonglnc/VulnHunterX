@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 VinSOC Cyber
+
 """Configuration management for CodeQL + LLM verification."""
 
 from __future__ import annotations

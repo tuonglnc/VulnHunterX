@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 VinSOC Cyber
+
 /**
  * @name Extract class and interface definitions
  * @description Extracts class/interface definitions for context lookup

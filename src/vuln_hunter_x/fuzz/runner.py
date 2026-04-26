@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 VinSOC Cyber
+
 """
 Stage 8: Run libFuzzer for compiled harnesses, collect crashes and summary.
 

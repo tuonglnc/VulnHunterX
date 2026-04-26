@@ -88,44 +88,83 @@ The **Vulnhalla methodology** improves accuracy by forcing the LLM to:
 
 ### Rule Profiles
 
-**Standard** — Default baseline; matches current tool defaults  
-├─ CodeQL security-extended suite (~200 queries per language)  
-├─ Semgrep: auto-detected rules  
-└─ OpenGrep: auto-detected rules  
+Pass `--profile {standard,extended,maximum}` to `analyze`.
 
-**Extended** — Broader coverage; adds detailed security audit rules  
-├─ CodeQL security-extended  
-├─ Semgrep: auto + security-audit + secrets  
-└─ OpenGrep: auto + security-audit + secrets  
-
-**Maximum** — Comprehensive; includes code quality and OWASP Top 10  
-├─ CodeQL security-and-quality suite (~400 queries per language)  
-├─ Semgrep: auto + security-audit + secrets + OWASP Top 10  
-└─ OpenGrep: auto + security-audit + secrets + OWASP Top 10  
+| Profile | CodeQL | Semgrep / OpenGrep |
+|---|---|---|
+| `standard` (default) | `security-extended` (~200 queries) | `auto` |
+| `extended` | `security-extended` | `auto` + `security-audit` + `secrets` |
+| `maximum` | `security-and-quality` (~400 queries) | `auto` + `security-audit` + `secrets` + `owasp-top-ten` |
 
 ---
 
 ## Quick Start
 
+### Prerequisites
+
+- Python 3.12+
+- [CodeQL CLI 2.15+](https://codeql.github.com/docs/codeql-cli/getting-started-with-the-codeql-cli/)
+- [Semgrep](https://semgrep.dev/docs/getting-started/) — optional
+- [OpenGrep](https://github.com/opengrep/opengrep#installation) — optional
+- An LLM provider: OpenAI, Anthropic, or local Ollama
+
+### Install
+
 ```bash
-# Install
 git clone https://github.com/vinsoc-cyber/VulnHunterX.git && cd VulnHunterX
 python3.12 -m venv .venv && source .venv/bin/activate
 pip install -e .
 
-# Configure
-cp env.example .env   # add OPENAI_API_KEY, ANTHROPIC_API_KEY, or OLLAMA_API_BASE
-
-# Verify setup
-vuln-hunter-x check-env
-
-# Run the full pipeline
-vuln-hunter-x prepare --repo pyyaml
-vuln-hunter-x analyze --repo pyyaml
-vuln-hunter-x verify --repo pyyaml --limit 5 --report
+cp env.example .env       # add OPENAI_API_KEY / ANTHROPIC_API_KEY / OLLAMA_API_BASE
+vuln-hunter-x check-env   # verify toolchain
 ```
 
-For detailed setup, see [QUICKSTART.md](QUICKSTART.md).
+### First run — example scripts
+
+Each script runs the full pipeline against one real-world library and one intentionally vulnerable target so you can see the FP-vs-TP contrast.
+
+| Script | Language | Real-world | Vulnerable |
+|---|---|---|---|
+| `examples/pipeline_python.py` | Python | pyyaml | dvpwa |
+| `examples/pipeline_javascript.py` | JavaScript | minimist | nodegoat |
+| `examples/pipeline_c.py` | C | c-ares | dvcp |
+| `examples/pipeline_cpp.py` | C++ | re2 | insecure-coding-examples |
+| `examples/pipeline_java.py` | Java | commons-collections | webgoat |
+| `examples/pipeline_php.py` | PHP | monolog | dvwa |
+| `examples/pipeline_go.py` | Go | gin | govwa |
+
+```bash
+python examples/pipeline_python.py
+# Common flags: --dry-run, --skip-clone, --api ; C/C++ scripts also support --fuzz
+```
+
+### Or run stages directly
+
+```bash
+vuln-hunter-x prepare --repo pyyaml
+vuln-hunter-x analyze --repo pyyaml
+vuln-hunter-x verify  --repo pyyaml --limit 5 --report
+```
+
+### Add your own repository
+
+```bash
+vuln-hunter-x prepare --url https://github.com/org/app.git --lang python
+vuln-hunter-x prepare --local-path /path/to/app --lang python --name app
+vuln-hunter-x prepare --url https://github.com/org/lib.git --lang c --build-command "make"
+```
+
+Or list it under `repos:` in [config/repos.yaml](config/repos.yaml) and use `--repo <name>` instead.
+
+### Troubleshooting
+
+| Error | Fix |
+|---|---|
+| `CodeQL CLI not found` | Add to `PATH` or set `CODEQL_PATH` in `.env` |
+| `Semgrep CLI not found` | Set `SEMGREP_PATH` in `.env` |
+| `OpenAI API key not configured` | Add `OPENAI_API_KEY=sk-...` to `.env` |
+| `could not resolve module cpp` | `codeql pack install config/queries/tools/cpp` |
+| `Database is already finalized` | Normal — analysis proceeds automatically |
 
 ---
 
@@ -461,7 +500,6 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) and [CHANGELOG.md](CHANGELOG.md).
 |---|---|---|
 | [SecLLMHolmes](https://github.com/ai4cloudops/SecLLMHolmes) | 228 findings | C/C++, Python |
 | [Juliet C/C++](https://samate.nist.gov/SARD/) | 64K test cases | C/C++ |
-| [CVEfixes](https://zenodo.org/records/13118970) | 12K commits | Multi-language |
 | [DiverseVul](https://github.com/wagner-group/diversevul) | 349K functions | C/C++ |
 
 ```bash

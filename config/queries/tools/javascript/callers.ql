@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 VinSOC Cyber
+
 /**
  * @name Extract function caller relationships
  * @description Maps each function to its callers for context expansion

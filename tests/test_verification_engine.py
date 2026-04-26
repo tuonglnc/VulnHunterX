@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 VinSOC Cyber
+
 """Tests for verification engine (e.g. test path exclusion)."""
 
 from __future__ import annotations

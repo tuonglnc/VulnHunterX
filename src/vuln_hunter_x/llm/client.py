@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 VinSOC Cyber
+
 """LLM client abstraction for OpenAI and Ollama via LiteLLM."""
 
 from __future__ import annotations

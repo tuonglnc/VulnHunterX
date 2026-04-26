@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 VinSOC Cyber
+
 """CLI command implementations for vuln-hunter-x."""
 
 from __future__ import annotations

@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 VinSOC Cyber
+
 """Ground truth data types and loading utilities for benchmark datasets."""
 
 from __future__ import annotations
@@ -24,7 +27,7 @@ class GroundTruthEntry:
     """
 
     id: str
-    source_dataset: str    # "secllmholmes" | "juliet" | "cvefixes"
+    source_dataset: str    # "secllmholmes" | "juliet" | "diversevul"
     cwe_id: str            # e.g., "CWE-416"
     rule_id: str           # mapped CodeQL/Semgrep rule ID; empty if no mapping
     file_path: str

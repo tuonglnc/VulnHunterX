@@ -353,7 +353,6 @@ multi-turn context expansion on top, which is the VulnHunterX improvement being 
 | ------------------------------ | ------------------------------------------- | -------------------------------- |
 | CPG-guided slicing (Phase 2)   | LLMxCPG: 68–91% code reduction              | High (requires CodeQL data-flow) |
 | Self-consistency voting (CISC) | 46% fewer samples for same accuracy         | Medium                           |
-| CVEfixes LLM evaluation        | Real-world commit-level ground truth        | Medium                           |
 | DiverseVul per-CWE sampling    | Same strategy as Juliet (balanced TP/FP)    | Low                              |
 | Confidence calibration charts  | Validate High/Medium/Low confidence signals | Low                              |
 

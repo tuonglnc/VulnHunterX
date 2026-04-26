@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 VinSOC Cyber
+
 """Adapter for the Juliet C/C++ Test Suite (NIST SARD).
 
 Juliet C/C++ 1.3.1: https://samate.nist.gov/SARD/test-suites

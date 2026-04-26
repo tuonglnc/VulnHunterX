@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 VinSOC Cyber
+
 """Ablation study approach: compare rule-specific vs generic vs zero-shot questions.
 
 Runs the same finding through three question variants to isolate the contribution

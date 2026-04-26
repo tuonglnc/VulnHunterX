@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 VinSOC Cyber
+
 """
 Stage 7.1–7.3: Select targets, gather context, generate harness sources.
 Stage 7.4–7.6: Optionally build, LLM fix loop, write status.

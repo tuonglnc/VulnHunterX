@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 VinSOC Cyber
+
 """
 Stage 6: Extract fuzz-oriented context (sub-stages 6.1–6.3).
 

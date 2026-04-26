@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 VinSOC Cyber
+
 /**
  * @name Extract all method and constructor definitions
  * @description Extracts callable name, file, start line, end line for context lookup

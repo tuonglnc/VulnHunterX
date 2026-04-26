@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 VinSOC Cyber
+
 """Centralized default values and constants.
 
 All hardcoded defaults (model names, timeouts, URLs, truncation limits)

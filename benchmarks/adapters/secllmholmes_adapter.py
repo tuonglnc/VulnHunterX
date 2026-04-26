@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 VinSOC Cyber
+
 """Adapter for the SecLLMHolmes benchmark dataset.
 
 SecLLMHolmes: LLMs Cannot Reliably Identify and Reason About Security Vulnerabilities (Yet?)

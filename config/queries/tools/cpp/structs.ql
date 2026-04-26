@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 VinSOC Cyber
+
 /**
  * @name Extract struct/class definitions with member types
  * @description Extracts struct and class definitions including member types for context lookup

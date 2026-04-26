@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 VinSOC Cyber
+
 """Tests for enriched fuzz context: loaders, harness generation, scoring."""
 
 from __future__ import annotations

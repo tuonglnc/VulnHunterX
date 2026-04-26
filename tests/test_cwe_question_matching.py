@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 VinSOC Cyber
+
 """Tests for CWE-based guided question matching in QuestionsLoader."""
 
 from __future__ import annotations

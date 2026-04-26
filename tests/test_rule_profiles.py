@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 VinSOC Cyber
+
 """Tests for rule profiles, security categories, and CWE mapping."""
 
 from __future__ import annotations

@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 VinSOC Cyber
+
 """
 Stage 7.2: Gather per-target fuzz context (signature + includes).
 
