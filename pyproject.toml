@@ -10,7 +10,7 @@ readme = "README.md"
 requires-python = ">=3.12,<3.14"
 license = { text = "MIT" }
 authors = [
-    { name = "VulnHunterX Team" }
+    { name = "VinSOC Cyber" }
 ]
 keywords = ["codeql", "llm", "security", "static-analysis", "vulnerability"]
 classifiers = [

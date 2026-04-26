@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 VinSOC Cyber
+
 """Tests for Stage 7 improvements: enum support, typedef resolution,
 buffer+size correlation, FILE* fmemopen, char array init, and bug fixes."""
 

@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 VinSOC Cyber
+
 """
 Stage 7.1: Select fuzz targets from SARIF and verification results.
 

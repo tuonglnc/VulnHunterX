@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 VinSOC Cyber
+
 """SARIF file parsing and finding extraction."""
 
 from __future__ import annotations

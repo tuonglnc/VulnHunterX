@@ -1,1 +1,4 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 VinSOC Cyber
+
 """Benchmark metrics and evaluation."""

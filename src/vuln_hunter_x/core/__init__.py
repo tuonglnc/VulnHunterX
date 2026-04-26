@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 VinSOC Cyber
+
 """Core types, configuration, and utilities."""
 
 from vuln_hunter_x.core.config import Config, load_config

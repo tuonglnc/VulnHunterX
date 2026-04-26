@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 VinSOC Cyber
+
 """Core data types for the SAST + LLM verification framework."""
 
 from __future__ import annotations

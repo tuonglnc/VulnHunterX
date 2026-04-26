@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 VinSOC Cyber
+
 """Raw SAST baseline: treat every flagged finding as True Positive (no LLM)."""
 
 from __future__ import annotations

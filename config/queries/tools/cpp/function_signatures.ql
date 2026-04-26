@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 VinSOC Cyber
+
 /**
  * @name Extract function signatures (name, file, params with types)
  * @description For fuzz driver generation: function + parameter types and names

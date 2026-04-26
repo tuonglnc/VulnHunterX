@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 VinSOC Cyber
+
 """Abstract base class and shared utilities for benchmark approaches."""
 
 from __future__ import annotations

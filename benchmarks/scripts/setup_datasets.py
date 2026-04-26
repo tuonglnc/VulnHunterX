@@ -1,8 +1,11 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 VinSOC Cyber
+
 """Download and set up benchmark datasets.
 
 Usage:
-    python benchmarks/scripts/setup_datasets.py [--dataset secllmholmes|juliet|cvefixes|diversevul|all]
+    python benchmarks/scripts/setup_datasets.py [--dataset secllmholmes|juliet|diversevul|all]
     python benchmarks/scripts/setup_datasets.py --list
 """
 
@@ -35,13 +38,6 @@ DATASETS: dict[str, dict] = {
         "url": "https://samate.nist.gov/SARD/downloads/test-suites/2017-10-01-juliet-test-suite-for-c-cplusplus-v1-3.zip",
         "target_dir": DATASETS_DIR / "juliet",
         "disk_mb": 600,
-    },
-    "cvefixes": {
-        "description": "CVEfixes v1.0.8: 12K vulnerability-fixing commits in SQLite",
-        "type": "zip",
-        "url": "https://zenodo.org/records/13118970/files/CVEfixes_v1.0.8.zip?download=1",
-        "target_dir": DATASETS_DIR / "cvefixes",
-        "disk_mb": 13000,
     },
     "diversevul": {
         "description": "DiverseVul: 349K C/C++ functions with real CVE-backed labels (150 CWEs)",
@@ -83,7 +79,7 @@ def _download_gdrive(file_id: str, filename: str, target: Path) -> None:
         import gdown  # type: ignore[import]
     logger.info("Downloading Google Drive file %s → %s", file_id, out_path)
     url = f"https://drive.google.com/uc?id={file_id}"
-    gdown.download(url, str(out_path), quiet=False, fuzzy=True)
+    gdown.download(url, str(out_path), quiet=False)
 
 
 def _download_and_extract(url: str, target: Path) -> None:

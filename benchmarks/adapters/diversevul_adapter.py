@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 VinSOC Cyber
+
 """Adapter for the DiverseVul dataset (RAID 2023).
 
 Source: https://github.com/wagner-group/diversevul

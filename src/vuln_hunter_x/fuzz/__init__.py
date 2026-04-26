@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 VinSOC Cyber
+
 """Fuzz-based vulnerability confirmation (Stages 5–8)."""
 
 from vuln_hunter_x.fuzz.build_sanitized import (

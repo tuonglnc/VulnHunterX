@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 VinSOC Cyber
+
 /**
  * @name Extract typedef definitions
  * @description Extracts typedef and type alias definitions with underlying types

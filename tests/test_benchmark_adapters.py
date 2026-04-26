@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 VinSOC Cyber
+
 """Unit tests for benchmark adapters (ground_truth, cwe_rule_map, dataset adapters)."""
 
 from __future__ import annotations

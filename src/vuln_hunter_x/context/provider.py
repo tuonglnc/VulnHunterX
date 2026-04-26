@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 VinSOC Cyber
+
 """CSV-based context provider for on-demand context expansion."""
 
 from __future__ import annotations

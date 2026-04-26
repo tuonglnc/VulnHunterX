@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 VinSOC Cyber
+
 """OpenGrep static analysis operations.
 
 OpenGrep is an open-source fork of Semgrep (LGPL 2.1) with the same

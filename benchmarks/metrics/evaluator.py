@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 VinSOC Cyber
+
 """Metrics computation for benchmark evaluation.
 
 Computes per-dataset and per-CWE:
