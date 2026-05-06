@@ -53,6 +53,13 @@ DATASETS: dict[str, dict] = {
         "target_dir": DATASETS_DIR / "owasp-benchmark-python",
         "disk_mb": 80,
     },
+    "realvuln": {
+        "description": "RealVuln Benchmark: real-CVE TPs + FP traps across Python web frameworks (MIT). Substitute for SastBench (URL not findable).",
+        "type": "git",
+        "url": "https://github.com/kolega-ai/Real-Vuln-Benchmark",
+        "target_dir": DATASETS_DIR / "realvuln",
+        "disk_mb": 30,
+    },
     "diversevul": {
         "description": "DiverseVul: 349K C/C++ functions with real CVE-backed labels (150 CWEs)",
         "type": "gdrive",
