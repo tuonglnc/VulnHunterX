@@ -370,6 +370,12 @@ Both ship a CSV manifest (`expectedresults-<version>.csv`) keyed by `BenchmarkTe
 
 OWASP's official scorecard uses the **Youden Index** (TPR + TNR − 1, ×100). We currently report P/R/F1 + FP-reduction; Youden Index is queued for the follow-up scoring upgrade so reviewers know which metrics are pending.
 
+### Noisy real-world dataset (RealVuln Benchmark)
+
+To exercise the verification engine on the SAST-tool-FP-vs-CVE-TP setting it is actually deployed against (rather than function-level CVE labels), we add the **RealVuln Benchmark** ([kolega-ai/Real-Vuln-Benchmark](https://github.com/kolega-ai/Real-Vuln-Benchmark), MIT) — 796 findings across 26 Python web repos, mixing real CVE true-positives with curated false-positive traps. This was adopted as a substitute for **SastBench** (arXiv 2601.02941), whose public repository URL was not findable at integration time; RealVuln has the same shape and a documented JSON schema (`is_vulnerable: bool` + `primary_cwe` + `location.{start_line,end_line,function}` + `evidence.{source,cve_id}`). The adapter is schema-compatible enough that swapping in SastBench later, if its repo becomes available, is a small change.
+
+Snippet extraction is best-effort: the adapter reads function lines from a per-repo working tree at `benchmarks/datasets/realvuln/_repos/<repo_id>/` (checkout managed by the user, keyed to each finding's `commit_sha`). Findings without a matching working tree are tagged `metadata.snippet_kind = "missing"`.
+
 ---
 
 ## References
@@ -385,4 +391,6 @@ OWASP's official scorecard uses the **Youden Index** (TPR + TNR − 1, ×100). W
 - [Java Juliet Subset](https://arxiv.org/abs/2405.15614) — Balanced subset sampling for LLM evaluation (May 2024)
 - [DiverseVul](https://github.com/wagner-group/diversevul) — 349K C/C++ functions with CVE-backed labels (RAID 2023)
 - [OWASP Benchmark Project](https://owasp.org/www-project-benchmark/) — synthetic SAST test suites with CSV ground truth ([Java repo](https://github.com/OWASP-Benchmark/BenchmarkJava), [Python repo](https://github.com/OWASP-Benchmark/BenchmarkPython))
+- [SastBench](https://arxiv.org/abs/2601.02941) — agentic SAST triage benchmark; public repo URL not located at integration time
+- [RealVuln Benchmark](https://github.com/kolega-ai/Real-Vuln-Benchmark) — real CVE TPs + FP traps for Python web frameworks (MIT); used as the SastBench substitute
 - [Juliet C/C++ 1.3.1](https://samate.nist.gov/SARD/test-suites/116) — NIST SARD test suite

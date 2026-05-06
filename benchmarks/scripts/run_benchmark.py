@@ -180,6 +180,18 @@ def _load_dataset(name: str, limit: int, juliet_per_cwe: int = 20, langs: list[s
             "Run: python benchmarks/scripts/setup_datasets.py --dataset juliet"
         )
 
+    if name == "realvuln":
+        ds_path = DATASETS_DIR / "realvuln"
+        if ds_path.exists():
+            from benchmarks.adapters.realvuln_adapter import RealVulnAdapter
+            return RealVulnAdapter(ds_path).load(limit=limit)
+        if fixture.exists():
+            return _load_fixture(fixture, limit=limit, langs=langs, cwes=cwes)
+        raise FileNotFoundError(
+            f"RealVuln dataset not found at {ds_path}. "
+            "Run: python benchmarks/scripts/setup_datasets.py --dataset realvuln"
+        )
+
     if name in ("owasp-java", "owasp-python"):
         lang = "java" if name == "owasp-java" else "python"
         ds_path = DATASETS_DIR / f"owasp-benchmark-{lang}"
@@ -494,7 +506,8 @@ def main() -> int:
     parser.add_argument(
         "--dataset",
         choices=["secllmholmes", "juliet", "diversevul",
-                 "owasp-java", "owasp-python", "owasp", "all"],
+                 "owasp-java", "owasp-python", "owasp",
+                 "realvuln", "all"],
         default="secllmholmes",
     )
     parser.add_argument(
@@ -658,7 +671,7 @@ def main() -> int:
     # Determine datasets and approaches
     if args.dataset == "all":
         datasets = ["secllmholmes", "juliet", "diversevul",
-                    "owasp-java", "owasp-python"]
+                    "owasp-java", "owasp-python", "realvuln"]
     elif args.dataset == "owasp":
         datasets = ["owasp-java", "owasp-python"]
     else:
