@@ -103,6 +103,8 @@ class GuidedQuestions:
     questions: list[str]
     context_hint: str = ""
     additional_context: list[str] = field(default_factory=list)
+    min_iterations: int = 1
+    snippet_window_lines: int | None = None
 
     def to_dict(self) -> dict:
         """Convert to dictionary for serialization."""
@@ -112,6 +114,8 @@ class GuidedQuestions:
             "questions": self.questions,
             "context_hint": self.context_hint,
             "additional_context": self.additional_context,
+            "min_iterations": self.min_iterations,
+            "snippet_window_lines": self.snippet_window_lines,
         }
 
 
@@ -153,6 +157,12 @@ class Verdict:
     context_needed: list[str] = field(default_factory=list)
     iterations: int = 1
     tokens_used: int = 0
+    input_tokens: int = 0
+    output_tokens: int = 0
+    # Subset of input_tokens that hit the provider's prompt cache.
+    # DeepSeek bills cache-hit input at ~26% of cache-miss; honest
+    # imputed cost requires this split.
+    cached_input_tokens: int = 0
     cost_usd: float = 0.0
     confidence_score: float = 0.0
     data_flow: str = ""
@@ -187,6 +197,9 @@ class Verdict:
             "timestamp": self.timestamp,
             "elapsed_seconds": self.elapsed_seconds,
             "tokens_used": self.tokens_used,
+            "input_tokens": self.input_tokens,
+            "output_tokens": self.output_tokens,
+            "cached_input_tokens": self.cached_input_tokens,
             "cost_usd": self.cost_usd,
             "data_flow": self.data_flow,
         }
@@ -207,6 +220,9 @@ class Verdict:
             context_needed=data.get("context_needed", []),
             iterations=data.get("iterations", 1),
             tokens_used=data.get("tokens_used", 0),
+            input_tokens=data.get("input_tokens", 0),
+            output_tokens=data.get("output_tokens", 0),
+            cached_input_tokens=data.get("cached_input_tokens", 0),
             cost_usd=data.get("cost_usd", 0.0),
             confidence_score=data.get("confidence_score", 0.0),
             data_flow=data.get("data_flow", ""),

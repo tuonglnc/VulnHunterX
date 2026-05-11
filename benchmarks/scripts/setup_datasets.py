@@ -39,6 +39,27 @@ DATASETS: dict[str, dict] = {
         "target_dir": DATASETS_DIR / "juliet",
         "disk_mb": 600,
     },
+    "owasp-java": {
+        "description": "OWASP BenchmarkJava v1.2: ~2,740 Java test cases, 11 CWE categories (GPL-2.0)",
+        "type": "git",
+        "url": "https://github.com/OWASP-Benchmark/BenchmarkJava",
+        "target_dir": DATASETS_DIR / "owasp-benchmark-java",
+        "disk_mb": 200,
+    },
+    "owasp-python": {
+        "description": "OWASP BenchmarkPython v0.1: ~1,230 Python test cases (GPL-3.0)",
+        "type": "git",
+        "url": "https://github.com/OWASP-Benchmark/BenchmarkPython",
+        "target_dir": DATASETS_DIR / "owasp-benchmark-python",
+        "disk_mb": 80,
+    },
+    "realvuln": {
+        "description": "RealVuln Benchmark: real-CVE TPs + FP traps across Python web frameworks (MIT). Substitute for SastBench (URL not findable).",
+        "type": "git",
+        "url": "https://github.com/kolega-ai/Real-Vuln-Benchmark",
+        "target_dir": DATASETS_DIR / "realvuln",
+        "disk_mb": 30,
+    },
     "diversevul": {
         "description": "DiverseVul: 349K C/C++ functions with real CVE-backed labels (150 CWEs)",
         "type": "gdrive",
