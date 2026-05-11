@@ -16,11 +16,14 @@ Standalone benchmark framework comparing VulnHunterX against baselines on three 
 
 ## Datasets
 
-| Dataset                | Size           | Language       | Ground Truth                                          |
-| ---------------------- | -------------- | -------------- | ----------------------------------------------------- |
-| **SecLLMHolmes**       | ~228 scenarios | C/C++, Python  | Handcrafted bad/good code pairs, 8 CWE classes        |
-| **Juliet C/C++ 1.3.1** | 64K test cases | C, C++         | NIST synthetic bad()/good() function pairs, ~180 CWEs |
-| **DiverseVul**         | 349K functions | C, C++         | 18,945 CVE-backed vulnerable + 330,492 non-vulnerable |
+| Dataset                  | Size           | Language       | Ground Truth                                          |
+| ------------------------ | -------------- | -------------- | ----------------------------------------------------- |
+| **SecLLMHolmes**         | ~228 scenarios | C/C++, Python  | Handcrafted bad/good code pairs, 8 CWE classes        |
+| **Juliet C/C++ 1.3.1**   | 64K test cases | C, C++         | NIST synthetic bad()/good() function pairs, ~180 CWEs |
+| **DiverseVul**           | 349K functions | C, C++         | 18,945 CVE-backed vulnerable + 330,492 non-vulnerable |
+| **OWASP BenchmarkJava**  | ~2,740 cases   | Java           | `expectedresults-1.2.csv` (TP/FP per case, 11 CWE categories) — GPL-2.0 |
+| **OWASP BenchmarkPython**| ~1,230 cases   | Python         | `expectedresults-0.1.csv` (TP/FP per case) — GPL-3.0  |
+| **RealVuln Benchmark**   | ~796 findings  | Python         | Real CVEs as TPs + 120 FP traps (Flask/Django/FastAPI/aiohttp/Tornado) — MIT |
 
 See [RESEARCH.md](RESEARCH.md) for the literature review that motivated dataset selection and benchmark design decisions.
 
@@ -193,6 +196,51 @@ for cwe in CWE-787 CWE-416 CWE-476 CWE-125; do
 done
 ```
 
+### OWASP Benchmark (Java + Python)
+
+The OWASP Benchmark Project ships two SAST test suites with CSV ground truth (`expectedresults-*.csv`). Each test case is a single file with a known TP/FP label and CWE — designed specifically for SAST tool comparison. Closes the Java gap and adds a second Python source.
+
+```bash
+# Smoke test (no LLM, fixture only — 5 entries)
+python benchmarks/scripts/run_benchmark.py \
+    --dataset owasp --approach raw-sast --limit 5
+
+# After cloning the suite:
+python benchmarks/scripts/setup_datasets.py --dataset owasp-java
+python benchmarks/scripts/setup_datasets.py --dataset owasp-python
+
+# Full Java run with a small model
+python benchmarks/scripts/run_benchmark.py \
+    --dataset owasp-java --approach all --model gpt-4o-mini \
+    --run-dir benchmarks/results/owasp_java
+
+# Combined Java + Python
+python benchmarks/scripts/run_benchmark.py \
+    --dataset owasp --approach vulnhunterx --model gpt-4o-mini
+```
+
+License note: BenchmarkJava is GPL-2.0 and BenchmarkPython is GPL-3.0. We clone them at runtime under `benchmarks/datasets/` rather than vendoring; project code stays MIT.
+
+### RealVuln Benchmark (real CVEs + FP traps)
+
+Adopted as a substitute for SastBench, whose public repository URL was not findable at the time of integration. RealVuln has the same shape (real CVE TPs + curated FP traps) and a documented JSON schema. Currently Python-only (Flask/Django/FastAPI/aiohttp/Tornado), 796 findings across 26 repos.
+
+```bash
+# Smoke test (no LLM, fixture only)
+python benchmarks/scripts/run_benchmark.py \
+    --dataset realvuln --approach raw-sast --limit 5
+
+# After cloning the suite:
+python benchmarks/scripts/setup_datasets.py --dataset realvuln
+
+# Real run with a small model
+python benchmarks/scripts/run_benchmark.py \
+    --dataset realvuln --approach all --model gpt-4o-mini \
+    --run-dir benchmarks/results/realvuln
+```
+
+For meaningful `code_snippet` content the adapter reads each function from a working tree under `benchmarks/datasets/realvuln/_repos/<repo_id>/`. You are responsible for checking out the matching `commit_sha` (recorded per-finding) into that path. When the working tree is absent the snippet is left empty and tagged `metadata.snippet_kind = "missing"` — the entry still scores correctly for raw-sast comparison but downstream LLM approaches need the source.
+
 ---
 
 ## CLI Reference
@@ -200,7 +248,11 @@ done
 ### `run_benchmark.py`
 
 ```
---dataset           secllmholmes | juliet | diversevul | all  (default: secllmholmes)
+--dataset           secllmholmes | juliet | diversevul |
+                    owasp-java | owasp-python | owasp |
+                    realvuln |
+                    all  (default: secllmholmes)
+                    `owasp` runs both OWASP Java + Python; `all` includes them and realvuln.
 --approach          One or more of: raw-sast vulnhunterx ablation all  (default: all)
 --model             LLM model name  (default: read from LLM_MODEL in .env, fallback gpt-4o)
 --provider          openai | anthropic | ollama  (default: read from LLM_PROVIDER in .env)
@@ -224,7 +276,9 @@ done
 ### `setup_datasets.py`
 
 ```
---dataset  secllmholmes | juliet | diversevul | all  (default: all)
+--dataset  secllmholmes | juliet | diversevul |
+           owasp-java | owasp-python | realvuln |
+           all  (default: all)
 --list     List available datasets and exit
 ```
 

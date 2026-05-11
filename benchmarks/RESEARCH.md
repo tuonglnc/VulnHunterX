@@ -355,6 +355,26 @@ multi-turn context expansion on top, which is the VulnHunterX improvement being 
 | Self-consistency voting (CISC) | 46% fewer samples for same accuracy         | Medium                           |
 | DiverseVul per-CWE sampling    | Same strategy as Juliet (balanced TP/FP)    | Low                              |
 | Confidence calibration charts  | Validate High/Medium/Low confidence signals | Low                              |
+| Youden Index + MCC scoring     | Match OWASP scorecard + SastBench paper     | Low                              |
+| PrimeVul adapter               | Cleaner C/C++ labels vs DiverseVul          | Low                              |
+| SastBench REST `/analyze` harness | Submit to SastBench leaderboard          | Medium                           |
+
+### Web-language coverage (Java + Python via OWASP Benchmark)
+
+VulnHunterX targets memory-safety in C/C++ today and the existing adapters reflect that. To exercise the web-side rule packs (CodeQL `java-queries`, `python-queries`, Semgrep web rules), we add the **OWASP Benchmark Project** suites:
+
+- `BenchmarkJava` v1.2 — ~2,740 cases, 11 CWE categories (SQLi, XSS, path traversal, command injection, LDAP, XPath, weak random, weak hash, trust boundary, insecure cookie, crypto). GPL-2.0.
+- `BenchmarkPython` v0.1 — ~1,230 cases over the same taxonomy. GPL-3.0.
+
+Both ship a CSV manifest (`expectedresults-<version>.csv`) keyed by `BenchmarkTest#####` filename + CWE — adapter parsing is straightforward. Datasets are cloned into `benchmarks/datasets/` at runtime; **VulnHunterX project code remains MIT**, the GPL applies only to the cloned test corpora (not vendored, not linked).
+
+OWASP's official scorecard uses the **Youden Index** (TPR + TNR − 1, ×100). We currently report P/R/F1 + FP-reduction; Youden Index is queued for the follow-up scoring upgrade so reviewers know which metrics are pending.
+
+### Noisy real-world dataset (RealVuln Benchmark)
+
+To exercise the verification engine on the SAST-tool-FP-vs-CVE-TP setting it is actually deployed against (rather than function-level CVE labels), we add the **RealVuln Benchmark** ([kolega-ai/Real-Vuln-Benchmark](https://github.com/kolega-ai/Real-Vuln-Benchmark), MIT) — 796 findings across 26 Python web repos, mixing real CVE true-positives with curated false-positive traps. This was adopted as a substitute for **SastBench** (arXiv 2601.02941), whose public repository URL was not findable at integration time; RealVuln has the same shape and a documented JSON schema (`is_vulnerable: bool` + `primary_cwe` + `location.{start_line,end_line,function}` + `evidence.{source,cve_id}`). The adapter is schema-compatible enough that swapping in SastBench later, if its repo becomes available, is a small change.
+
+Snippet extraction is best-effort: the adapter reads function lines from a per-repo working tree at `benchmarks/datasets/realvuln/_repos/<repo_id>/` (checkout managed by the user, keyed to each finding's `commit_sha`). Findings without a matching working tree are tagged `metadata.snippet_kind = "missing"`.
 
 ---
 
@@ -370,4 +390,7 @@ multi-turn context expansion on top, which is the VulnHunterX improvement being 
 - [D2A Quality Study](https://rolandcroft.github.io/assets/publications/ICSE_23.pdf) — Dataset quality analysis (ICSE 2023)
 - [Java Juliet Subset](https://arxiv.org/abs/2405.15614) — Balanced subset sampling for LLM evaluation (May 2024)
 - [DiverseVul](https://github.com/wagner-group/diversevul) — 349K C/C++ functions with CVE-backed labels (RAID 2023)
+- [OWASP Benchmark Project](https://owasp.org/www-project-benchmark/) — synthetic SAST test suites with CSV ground truth ([Java repo](https://github.com/OWASP-Benchmark/BenchmarkJava), [Python repo](https://github.com/OWASP-Benchmark/BenchmarkPython))
+- [SastBench](https://arxiv.org/abs/2601.02941) — agentic SAST triage benchmark; public repo URL not located at integration time
+- [RealVuln Benchmark](https://github.com/kolega-ai/Real-Vuln-Benchmark) — real CVE TPs + FP traps for Python web frameworks (MIT); used as the SastBench substitute
 - [Juliet C/C++ 1.3.1](https://samate.nist.gov/SARD/test-suites/116) — NIST SARD test suite
