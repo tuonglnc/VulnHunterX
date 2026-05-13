@@ -25,7 +25,10 @@ from vuln_hunter_x.codeql.analysis import CodeQLAnalyzer
 
 def _args(**overrides) -> argparse.Namespace:
     """Minimal Namespace with the attributes our helper checks."""
-    defaults = {"_profile_custom_semgrep_path": ""}
+    defaults = {
+        "_profile_custom_semgrep_path": "",
+        "_profile_language_specific_configs": {},
+    }
     defaults.update(overrides)
     return argparse.Namespace(**defaults)
 
@@ -89,6 +92,40 @@ class TestExpandPerRepoConfigs:
         )
         # Expanded once, not twice
         assert out.count("config/semgrep-custom/go.yaml") == 1
+
+    def test_keeps_registry_template_in_input(self) -> None:
+        """When the input contains ``p/${LANG}`` style refs, they should expand
+        and be kept (registry refs aren't filesystem-checked)."""
+        args = _args()
+        out = _expand_per_repo_configs(args, ["p/${LANG}"], "python")
+        assert "p/python" in out
+
+    def test_appends_language_specific_packs_from_profile(self) -> None:
+        args = _args(_profile_language_specific_configs={
+            "python": ["p/django", "p/flask"],
+            "java": ["p/java"],
+        })
+        out = _expand_per_repo_configs(args, ["auto"], "python")
+        assert out == ["auto", "p/django", "p/flask"]
+
+    def test_language_specific_uses_correct_lang(self) -> None:
+        args = _args(_profile_language_specific_configs={
+            "python": ["p/django"],
+            "go": ["p/gosec"],
+        })
+        out = _expand_per_repo_configs(args, ["auto"], "go")
+        assert "p/gosec" in out
+        assert "p/django" not in out
+
+    def test_language_specific_no_match_for_unknown_lang(self) -> None:
+        args = _args(_profile_language_specific_configs={"python": ["p/django"]})
+        out = _expand_per_repo_configs(args, ["auto"], "cpp")
+        assert out == ["auto"]
+
+    def test_language_specific_does_not_duplicate(self) -> None:
+        args = _args(_profile_language_specific_configs={"python": ["p/django"]})
+        out = _expand_per_repo_configs(args, ["auto", "p/django"], "python")
+        assert out.count("p/django") == 1
 
 
 # ── CodeQLAnalyzer.run_analysis(extra_suites=...) ────────────────────────────

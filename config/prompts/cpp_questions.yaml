@@ -113,17 +113,9 @@ cpp/stack-address-escape:
 # C/C++ Memory Safety - Other
 # ==============================================================================
 
-cpp/uninitialized-local:
-  short_description: "Use of uninitialized local variable"
-  questions:
-    - "Where is the variable DECLARED and what is its type?"
-    - "Is there an INITIALIZER at declaration (e.g., 'int x = 0;')?"
-    - "List ALL code paths from declaration to the flagged use."
-    - "On EACH path, is the variable assigned a value BEFORE use?"
-    - "Are there any EARLY RETURNS or GOTO statements that skip initialization?"
-    - "If the variable is a struct, are ALL fields initialized before use?"
-  context_hint: "Include all control flow paths from declaration to use."
-  additional_context: ["caller", "struct"]
+# cpp/uninitialized-local consolidated into cpp/use-of-uninitialized-variable
+# (Stage-3 dedup). Both had identical semantics; the canonical name matches
+# CodeQL's rule_id.
 
 cpp/integer-overflow:
   short_description: "Integer overflow in arithmetic operation"
@@ -166,7 +158,7 @@ cpp/sql-injection:
   context_hint: "Trace from input source through all transformations to SQL execution."
   additional_context: ["caller"]
 
-cpp/command-line-injection:
+cpp/command-injection:
   short_description: "User input passed to shell command execution"
   questions:
     - "Where does the INPUT value originate - what is the ultimate SOURCE?"
@@ -367,18 +359,8 @@ cpp/unsafe-functions:
 # C/C++ - Null / Dangling Pointer
 # ==============================================================================
 
-cpp/null-deref:
-  short_description: "Null pointer dereference — pointer used without null check"
-  questions:
-    - "Where is the POINTER assigned — via malloc/calloc/new, function return value, parameter, or struct member access? Which of these CAN return NULL?"
-    - "Enumerate ALL dereference sites of this pointer — not just the flagged one. List each with its line number."
-    - "For EACH dereference site, is there a NULL check on a path that DOMINATES it (i.e., every possible execution path to the dereference MUST pass through the check)? A check in a sibling branch does NOT protect a different branch."
-    - "If a NULL check exists, verify it checks the EXACT SAME variable (not an alias, not a different pointer, not a stale copy). Does the pointer get reassigned between the check and the dereference?"
-    - "Could the pointer become NULL AFTER the check — via a function call, callback, signal handler, or concurrent modification between check and use?"
-    - "Is this in an error-handling path where NULL is expected (e.g., malloc failure) and the dereference is the bug, or is this a logic error where NULL should never occur?"
-    - "What is the impact — guaranteed crash (DoS), or could an attacker exploit the null dereference for control flow hijacking?"
-  context_hint: "TRACE: ptr_assign -> null_check_paths -> deref_site | NEED: caller(ptr_param_source), struct(type_with_nullable_fields), all_callers(who_passes_null)"
-  additional_context: ["caller", "struct", "all_callers"]
+# cpp/null-deref consolidated into cpp/null-pointer-dereference (Stage-3 dedup).
+# Both had identical semantics; the canonical name matches CodeQL's rule_id.
 
 cpp/dangling-pointer:
   short_description: "Pointer used after the lifetime of the object it references has ended"

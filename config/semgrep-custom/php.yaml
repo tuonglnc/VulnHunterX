@@ -1,0 +1,127 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 VinSOC Cyber
+#
+# Custom Semgrep rules for PHP-specific vulnerabilities not covered by
+# registry packs (p/php, p/security-audit, p/owasp-top-ten, etc.).
+#
+# Each rule carries metadata.cwe so the verification engine routes the
+# finding to the language-specific guided question via cwe_question_map
+# in config/rule_categories.yaml.
+#
+# Validate with: opengrep --validate --config config/semgrep-custom/php.yaml
+# Test with:     pytest tests/test_custom_semgrep_rules.py -v
+
+rules:
+
+  # ── CWE-1025: Type juggling via loose comparison in security contexts ──
+  - id: vulnhunterx.php.type-juggling
+    languages: [php]
+    severity: WARNING
+    message: |
+      Loose comparison (== / !=) on a value derived from user input can be
+      bypassed via PHP type juggling — e.g. "0e1" == "0e2" evaluates to true
+      because both are coerced to floats. Use strict comparison (=== / !==)
+      in authentication, authorization, and token-check paths (CWE-1025).
+    metadata:
+      cwe: ["CWE-1025"]
+      category: security
+      owasp: "A07:2021"
+      references:
+        - https://cwe.mitre.org/data/definitions/1025.html
+        - https://www.php.net/manual/en/language.operators.comparison.php
+    patterns:
+      - pattern-either:
+          # password/hash/token compared loosely
+          - pattern: $X == $_GET[...]
+          - pattern: $X == $_POST[...]
+          - pattern: $X == $_REQUEST[...]
+          - pattern: $_GET[...] == $X
+          - pattern: $_POST[...] == $X
+          - pattern: $_REQUEST[...] == $X
+      - pattern-not: $X === $_GET[...]
+      - pattern-not: $X === $_POST[...]
+      - pattern-not: $X === $_REQUEST[...]
+
+  # ── CWE-1062: extract() on user-controlled array overwrites variables ──
+  - id: vulnhunterx.php.extract-injection
+    languages: [php]
+    severity: ERROR
+    message: |
+      extract() called on a user-controlled array allows an attacker to
+      overwrite arbitrary local variables (including authorisation flags).
+      Use EXTR_SKIP / EXTR_PREFIX_ALL at minimum, or refactor to explicit
+      assignments (CWE-1062).
+    metadata:
+      cwe: ["CWE-1062"]
+      category: security
+      owasp: "A03:2021"
+      references:
+        - https://cwe.mitre.org/data/definitions/1062.html
+        - https://www.php.net/manual/en/function.extract.php
+    patterns:
+      - pattern-either:
+          - pattern: extract($_GET)
+          - pattern: extract($_POST)
+          - pattern: extract($_REQUEST)
+          - pattern: extract($_COOKIE)
+          - pattern: extract($_GET, ...)
+          - pattern: extract($_POST, ...)
+          - pattern: extract($_REQUEST, ...)
+      - pattern-not: extract(..., EXTR_SKIP)
+      - pattern-not: extract(..., EXTR_PREFIX_ALL, ...)
+      - pattern-not: extract(..., EXTR_PREFIX_INVALID, ...)
+
+  # ── CWE-621: Variable variables ($$var) allow attacker variable creation ──
+  # Semgrep's PHP frontend cannot parse `$$var` natively because `$X` is a
+  # metavariable. Use regex matching against the raw source instead.
+  - id: vulnhunterx.php.variable-variables
+    languages: [php]
+    severity: WARNING
+    message: |
+      Variable-variable assignment ($$name = ...) near user-input access can
+      allow an attacker to overwrite arbitrary variables in the current scope,
+      including security-critical state (CWE-621).
+    metadata:
+      cwe: ["CWE-621"]
+      category: security
+      references:
+        - https://cwe.mitre.org/data/definitions/621.html
+        - https://www.php.net/manual/en/language.variables.variable.php
+    pattern-regex: '\$\$[a-zA-Z_][a-zA-Z0-9_]*\s*=.*\$_(GET|POST|REQUEST)'
+
+  # ── CWE-98: PHP file inclusion of attacker-controlled file path ──
+  - id: vulnhunterx.php.file-inclusion
+    languages: [php]
+    severity: ERROR
+    message: |
+      include / require with a user-controlled path enables Local or Remote
+      File Inclusion (LFI/RFI). Validate against a fixed allowlist or use
+      a switch/case to dispatch to known-safe filenames (CWE-98).
+    metadata:
+      cwe: ["CWE-98"]
+      category: security
+      owasp: "A03:2021"
+      references:
+        - https://cwe.mitre.org/data/definitions/98.html
+    patterns:
+      - pattern-either:
+          - pattern: include($_GET[...]);
+          - pattern: include_once($_GET[...]);
+          - pattern: require($_GET[...]);
+          - pattern: require_once($_GET[...]);
+          - pattern: include($_POST[...]);
+          - pattern: include_once($_POST[...]);
+          - pattern: require($_POST[...]);
+          - pattern: require_once($_POST[...]);
+          - pattern: include($_REQUEST[...]);
+          - pattern: include_once($_REQUEST[...]);
+          - pattern: require($_REQUEST[...]);
+          - pattern: require_once($_REQUEST[...]);
+          - pattern: |
+              $X = $_GET[...];
+              ...
+              include($X);
+          - pattern: |
+              $X = $_GET[...];
+              ...
+              require($X);

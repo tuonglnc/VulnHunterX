@@ -41,6 +41,11 @@ class RuleProfile:
     * ``custom_semgrep_path`` – optional path template (may contain ``${LANG}``)
       pointing to a custom Semgrep ruleset. Appended to ``semgrep_configs`` and
       ``opengrep_configs`` at resolution time in ``cmd_analyze``.
+    * ``language_specific_configs`` – per-language extra Semgrep/OpenGrep packs.
+      Keyed by language (``python``, ``javascript``, ``cpp``, ``java``, ``php``, ``go``).
+      Appended to the universal ``semgrep_configs`` per repo. Lets us include
+      framework/language packs like ``p/django`` for Python repos without
+      polluting Java scans.
     """
 
     name: str
@@ -50,6 +55,7 @@ class RuleProfile:
     opengrep_configs: list[str]
     include_custom_codeql: bool = False
     custom_semgrep_path: str = ""
+    language_specific_configs: dict[str, list[str]] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -103,6 +109,12 @@ class RuleProfileManager:
         for name, cfg in (data.get("profiles") or {}).items():
             if not isinstance(cfg, dict):
                 continue
+            raw_lang_specific = cfg.get("language_specific_configs") or {}
+            lang_specific = {
+                str(lang): [str(c) for c in (cfgs or [])]
+                for lang, cfgs in raw_lang_specific.items()
+                if isinstance(cfgs, list)
+            }
             self._profiles[name] = RuleProfile(
                 name=name,
                 description=cfg.get("description", ""),
@@ -111,6 +123,7 @@ class RuleProfileManager:
                 opengrep_configs=cfg.get("opengrep_configs", ["auto"]),
                 include_custom_codeql=bool(cfg.get("include_custom_codeql", False)),
                 custom_semgrep_path=str(cfg.get("custom_semgrep_path", "")),
+                language_specific_configs=lang_specific,
             )
 
         # Categories
@@ -188,10 +201,13 @@ class RuleProfileManager:
         """Return Semgrep configs for *profile_name*, with ``${LANG}`` expanded.
 
         Appends ``custom_semgrep_path`` (template-expanded) if non-empty and the
-        resolved file exists.
+        resolved file exists. Also appends per-language packs from
+        ``language_specific_configs`` when ``lang`` matches.
         """
         profile = self.get_profile(profile_name)
         configs = [c.replace("${LANG}", lang) for c in profile.semgrep_configs]
+        if lang:
+            configs.extend(profile.language_specific_configs.get(lang, []))
         if profile.custom_semgrep_path and lang:
             resolved = profile.custom_semgrep_path.replace("${LANG}", lang)
             if Path(resolved).is_file():
@@ -199,9 +215,15 @@ class RuleProfileManager:
         return configs
 
     def get_opengrep_configs(self, profile_name: str, *, lang: str = "") -> list[str]:
-        """Return OpenGrep configs for *profile_name*, with ``${LANG}`` expanded."""
+        """Return OpenGrep configs for *profile_name*, with ``${LANG}`` expanded.
+
+        Same semantics as ``get_semgrep_configs`` — OpenGrep accepts the same
+        ``--config p/<pack>`` syntax.
+        """
         profile = self.get_profile(profile_name)
         configs = [c.replace("${LANG}", lang) for c in profile.opengrep_configs]
+        if lang:
+            configs.extend(profile.language_specific_configs.get(lang, []))
         if profile.custom_semgrep_path and lang:
             resolved = profile.custom_semgrep_path.replace("${LANG}", lang)
             if Path(resolved).is_file():

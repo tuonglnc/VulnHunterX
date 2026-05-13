@@ -406,18 +406,39 @@ def _run_codeql_analyze(
 def _expand_per_repo_configs(
     args: argparse.Namespace, configs: list[str], lang: str,
 ) -> list[str]:
-    """Expand ``${LANG}`` placeholders in semgrep/opengrep configs and append the
-    custom-semgrep-path declared by the active rule profile (when the resolved
-    file exists). Returns a new list — does not mutate ``configs``.
+    """Resolve final Semgrep/OpenGrep configs for one repo at one language.
+
+    The transformation pipeline is:
+
+    1. Expand ``${LANG}`` placeholders in the input list. For *local file*
+       paths the resolved path must exist (otherwise the entry is dropped);
+       *registry refs* (containing ``:`` or starting with ``p/``/``r/``) are
+       always kept.
+    2. Append per-language packs from
+       ``args._profile_language_specific_configs[lang]`` (set by ``cmd_analyze``
+       when a profile is active).
+    3. Append the profile's ``custom_semgrep_path`` template, resolved for
+       this language, when the resolved file exists.
+
+    Returns a new list — does not mutate ``configs``.
     """
     expanded: list[str] = []
     for c in configs:
         if isinstance(c, str) and "${LANG}" in c:
             resolved = c.replace("${LANG}", lang)
-            if Path(resolved).is_file():
+            # Registry refs (no path semantics) cannot be filesystem-checked;
+            # accept anything that looks like a Semgrep registry handle.
+            if resolved.startswith(("p/", "r/")) or ":" in resolved:
                 expanded.append(resolved)
-            # else: silently drop — the template did not resolve to a real file
+            elif Path(resolved).is_file():
+                expanded.append(resolved)
+            # else: drop — local-path template that didn't resolve
         else:
+            expanded.append(c)
+
+    lang_specific = getattr(args, "_profile_language_specific_configs", None) or {}
+    for c in lang_specific.get(lang, []):
+        if c not in expanded:
             expanded.append(c)
 
     custom_path = getattr(args, "_profile_custom_semgrep_path", "") or ""
@@ -772,6 +793,7 @@ def cmd_analyze(args: argparse.Namespace) -> int:
             # Surface custom-rule flags downstream
             args._profile_include_custom_codeql = profile.include_custom_codeql
             args._profile_custom_semgrep_path = profile.custom_semgrep_path
+            args._profile_language_specific_configs = profile.language_specific_configs
             if not getattr(args, "semgrep_configs", None):
                 # Expand ${LANG} now if a single lang is selected; otherwise per-repo
                 # expansion happens inside _run_semgrep_analyze.
