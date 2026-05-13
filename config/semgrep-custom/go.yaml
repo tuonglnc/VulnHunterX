@@ -1,0 +1,105 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 VinSOC Cyber
+#
+# Custom Semgrep rules for Go vulnerabilities not covered by p/gosec
+# (which focuses on common patterns; we target concurrency/runtime gaps).
+#
+# Validate: opengrep --validate --config config/semgrep-custom/go.yaml
+
+rules:
+
+  # ── CWE-405: Goroutine leak — go statement without bounded channel ──
+  - id: vulnhunterx.go.goroutine-leak
+    languages: [go]
+    severity: WARNING
+    message: |
+      Goroutine started inside a request/handler scope writes to an unbuffered
+      channel without a select+timeout — if the receiver never reads, the
+      goroutine blocks forever and leaks. Use a buffered channel, context
+      cancellation, or sync.WaitGroup with bounded receive (CWE-405).
+    metadata:
+      cwe: ["CWE-405"]
+      category: security
+      references:
+        - https://cwe.mitre.org/data/definitions/405.html
+        - https://go.dev/blog/pipelines
+    patterns:
+      - pattern-either:
+          - pattern: |
+              go func() {
+                ...
+                $CH <- $X
+                ...
+              }()
+      - pattern-not-inside: |
+          $CH := make(chan $T, $N)
+          ...
+      - pattern-not-inside: |
+          select {
+          case ...:
+            ...
+          case <-ctx.Done():
+            ...
+          }
+
+  # ── CWE-248: Unrecovered panic in HTTP handler crashes the process ──
+  - id: vulnhunterx.go.panic-in-handler
+    languages: [go]
+    severity: WARNING
+    message: |
+      net/http handler can panic on a code path not wrapped by recover().
+      An unrecovered panic terminates the goroutine — and without the default
+      net/http panic-handler, can crash the entire server. Wrap handlers with
+      a recovery middleware (CWE-248).
+    metadata:
+      cwe: ["CWE-248"]
+      category: security
+      references:
+        - https://cwe.mitre.org/data/definitions/248.html
+    patterns:
+      - pattern-either:
+          - pattern: |
+              func $H(w http.ResponseWriter, r *http.Request) {
+                ...
+                panic($MSG)
+                ...
+              }
+          - pattern: |
+              func $H(w http.ResponseWriter, r *http.Request) {
+                ...
+                $X[$I]
+                ...
+              }
+      - pattern-not-inside: |
+          func $H(w http.ResponseWriter, r *http.Request) {
+            defer func() {
+              if $R := recover(); $R != nil {
+                ...
+              }
+            }()
+            ...
+          }
+
+  # ── CWE-704: unsafe.Pointer used for type punning bypasses type safety ──
+  - id: vulnhunterx.go.unsafe-pointer
+    languages: [go]
+    severity: WARNING
+    message: |
+      unsafe.Pointer cast between unrelated types bypasses Go's type system
+      and can cause memory corruption, out-of-bounds reads, or undefined
+      behaviour. Restrict to documented patterns in the unsafe package docs
+      (CWE-704).
+    metadata:
+      cwe: ["CWE-704"]
+      category: security
+      references:
+        - https://cwe.mitre.org/data/definitions/704.html
+        - https://pkg.go.dev/unsafe#Pointer
+    patterns:
+      - pattern-either:
+          - pattern: |
+              $X := (*$T)(unsafe.Pointer(&$Y))
+          - pattern: |
+              (*$T)(unsafe.Pointer($Y))
+      - pattern-not: |
+          (*$T)(unsafe.Pointer(uintptr($X)))

@@ -64,8 +64,53 @@ profiles:
       - "p/secrets"
       - "p/owasp-top-ten"
 
+  extended-registry:
+    description: "Verified public registry packs only — no custom rules, broadest CWE coverage from semgrep.dev"
+    codeql_suite_suffix: "security-and-quality"
+    # Packs verified to load via opengrep against semgrep.dev. Rule counts
+    # captured during Stage-2 audit (subject to drift). See
+    # scripts/audit_rule_coverage.py --probe-tools for re-verification.
+    semgrep_configs:
+      - "auto"
+      - "p/security-audit"     # 225 rules — broad audit (alias of r2c-security-audit)
+      - "p/secrets"            # 51 rules  — hardcoded secrets, API keys
+      - "p/owasp-top-ten"      # 544 rules — OWASP 2021 coverage
+      - "p/cwe-top-25"         # 215 rules — Top-25 CWE coverage
+      - "p/gitleaks"           # 175 rules — secret detection (broader than p/secrets)
+      - "p/jwt"                # 16 rules  — CWE-347 signature checks
+      - "p/insecure-transport" # 53 rules  — CWE-319 cleartext-transmission
+    opengrep_configs:
+      - "auto"
+      - "p/security-audit"
+      - "p/secrets"
+      - "p/owasp-top-ten"
+      - "p/cwe-top-25"
+      - "p/gitleaks"
+      - "p/jwt"
+      - "p/insecure-transport"
+    language_specific_configs:
+      python:
+        - "p/python"           # 151 rules
+        - "p/django"           # 28 rules
+        - "p/flask"            # 18 rules
+      javascript:
+        - "p/javascript"       # 74 rules
+        - "p/nodejs"           # 36 rules
+        - "p/eslint-plugin-security"  # 6 rules
+      typescript:
+        - "p/typescript"       # 74 rules
+        - "p/nodejs"
+      java:
+        - "p/java"             # 60 rules
+      php:
+        - "p/php"              # 24 rules
+      go:
+        - "p/gosec"            # 23 rules — G-series gosec rules
+      # cpp/c have no working language-specific registry packs as of Stage-2 audit;
+      # they rely on universal packs only.
+
   full:
-    description: "Full coverage — security-and-quality + custom CodeQL + custom Semgrep for every guided-question CWE"
+    description: "Full coverage — extended-registry + custom CodeQL + custom Semgrep for every guided-question CWE"
     codeql_suite_suffix: "security-and-quality"
     include_custom_codeql: true
     custom_semgrep_path: "config/semgrep-custom/${LANG}.yaml"
@@ -74,11 +119,37 @@ profiles:
       - "p/security-audit"
       - "p/secrets"
       - "p/owasp-top-ten"
+      - "p/cwe-top-25"
+      - "p/gitleaks"
+      - "p/jwt"
+      - "p/insecure-transport"
     opengrep_configs:
       - "auto"
       - "p/security-audit"
       - "p/secrets"
       - "p/owasp-top-ten"
+      - "p/cwe-top-25"
+      - "p/gitleaks"
+      - "p/jwt"
+      - "p/insecure-transport"
+    language_specific_configs:
+      python:
+        - "p/python"
+        - "p/django"
+        - "p/flask"
+      javascript:
+        - "p/javascript"
+        - "p/nodejs"
+        - "p/eslint-plugin-security"
+      typescript:
+        - "p/typescript"
+        - "p/nodejs"
+      java:
+        - "p/java"
+      php:
+        - "p/php"
+      go:
+        - "p/gosec"
 
 # ── Security Categories ──────────────────────────────────────────────────────
 # Group vulnerability types by CWE ID for filtering at verify time.

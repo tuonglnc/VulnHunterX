@@ -1,0 +1,108 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 VinSOC Cyber
+#
+# Custom Semgrep rules for Python vulnerabilities not covered by registry
+# packs (p/python, p/django, p/flask).
+#
+# Validate: opengrep --validate --config config/semgrep-custom/python.yaml
+
+rules:
+
+  # ── CWE-489: Flask app.run(debug=True) leaves Werkzeug debugger exposed ──
+  - id: vulnhunterx.python.flask-debug
+    languages: [python]
+    severity: ERROR
+    message: |
+      Flask app.run(debug=True) enables the Werkzeug interactive debugger
+      which provides shell-level code execution on any unhandled exception.
+      Disable in production — set FLASK_DEBUG=0 / use a production WSGI
+      server (CWE-489).
+    metadata:
+      cwe: ["CWE-489"]
+      category: security
+      references:
+        - https://cwe.mitre.org/data/definitions/489.html
+        - https://flask.palletsprojects.com/en/latest/debugging/
+    patterns:
+      - pattern-either:
+          - pattern: $APP.run(..., debug=True, ...)
+          - pattern: $APP.run(..., debug=True)
+          - pattern: |
+              app.debug = True
+              ...
+              app.run(...)
+      - pattern-not: $APP.run(..., debug=False, ...)
+
+  # ── CWE-502: yaml.load() without SafeLoader → arbitrary deserialization ──
+  - id: vulnhunterx.python.unsafe-yaml
+    languages: [python]
+    severity: ERROR
+    message: |
+      yaml.load() without an explicit SafeLoader / SafeYAML loader deserialises
+      arbitrary Python objects — equivalent to eval() on untrusted input.
+      Use yaml.safe_load() or pass Loader=yaml.SafeLoader (CWE-502).
+    metadata:
+      cwe: ["CWE-502"]
+      category: security
+      owasp: "A08:2021"
+      references:
+        - https://cwe.mitre.org/data/definitions/502.html
+        - https://pyyaml.org/wiki/PyYAMLDocumentation
+    patterns:
+      - pattern-either:
+          - pattern: yaml.load($X)
+          - pattern: yaml.load($X, Loader=yaml.Loader)
+          - pattern: yaml.load($X, Loader=yaml.UnsafeLoader)
+          - pattern: yaml.load($X, Loader=yaml.FullLoader)
+      - pattern-not: yaml.load($X, Loader=yaml.SafeLoader)
+      - pattern-not: yaml.load($X, Loader=yaml.CSafeLoader)
+      - pattern-not: yaml.safe_load($X)
+
+  # ── CWE-295: ssl.SSLContext with check_hostname=False or verify_mode=CERT_NONE ──
+  - id: vulnhunterx.python.insecure-tls-context
+    languages: [python]
+    severity: ERROR
+    message: |
+      SSLContext configured with check_hostname disabled or verify_mode set to
+      CERT_NONE allows man-in-the-middle attacks even on https:// requests
+      (CWE-295). Leave defaults intact — ssl.create_default_context() is safe.
+    metadata:
+      cwe: ["CWE-295"]
+      category: security
+      owasp: "A02:2021"
+      references:
+        - https://cwe.mitre.org/data/definitions/295.html
+        - https://docs.python.org/3/library/ssl.html
+    patterns:
+      - pattern-either:
+          - pattern: |
+              $CTX.check_hostname = False
+          - pattern: |
+              $CTX.verify_mode = ssl.CERT_NONE
+          - pattern: ssl._create_unverified_context()
+          - pattern: ssl._create_unverified_context(...)
+
+  # ── CWE-1333: User input used as regex pattern (regex-injection) ──
+  - id: vulnhunterx.python.regex-injection
+    languages: [python]
+    severity: WARNING
+    message: |
+      User-controlled value used as a regex pattern — attacker can craft a
+      pattern with catastrophic backtracking (ReDoS) or anchor manipulation.
+      Use re.escape() on user input or treat as literal substring (CWE-1333).
+    metadata:
+      cwe: ["CWE-1333"]
+      category: security
+      references:
+        - https://cwe.mitre.org/data/definitions/1333.html
+        - https://owasp.org/www-community/attacks/Regular_expression_Denial_of_Service_-_ReDoS
+    patterns:
+      - pattern-either:
+          - pattern: re.compile(request.$X)
+          - pattern: re.compile(request.$X, ...)
+          - pattern: re.match(request.$X, ...)
+          - pattern: re.search(request.$X, ...)
+          - pattern: re.sub(request.$X, ..., ...)
+          - pattern: re.compile(flask.request.$X)
+          - pattern: re.compile(flask.request.$X, ...)
+      - pattern-not: re.compile(re.escape(...))

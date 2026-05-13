@@ -201,6 +201,25 @@ def _probe_codeql_rules() -> dict[str, set[str]]:
     return out
 
 
+# Packs verified to load against semgrep.dev as of Stage-2 audit.
+# Update this list when adding to config/rule_categories.yaml.
+_KNOWN_GOOD_PACKS: list[str] = [
+    "auto",
+    "p/security-audit",
+    "p/secrets",
+    "p/owasp-top-ten",
+    "p/cwe-top-25",
+    "p/gitleaks",
+    "p/jwt",
+    "p/insecure-transport",
+    "p/python", "p/django", "p/flask",
+    "p/javascript", "p/typescript", "p/nodejs", "p/eslint-plugin-security",
+    "p/java",
+    "p/php",
+    "p/gosec",
+]
+
+
 def _probe_semgrep_rules() -> set[str]:
     """Return set of Semgrep rule IDs from default registry packs.
 
@@ -341,15 +360,69 @@ def _emit_missing_cwe_patch(matrix: list[dict[str, str]]) -> Path:
     return path
 
 
+def _verify_known_packs() -> int:
+    """Probe each pack in ``_KNOWN_GOOD_PACKS`` to confirm it still loads.
+
+    Tries opengrep first, then semgrep. Returns 0 if all packs load, 1 if any
+    404 or otherwise fails.
+    """
+    tool = "opengrep" if shutil.which("opengrep") else ("semgrep" if shutil.which("semgrep") else None)
+    if not tool:
+        print("verify-packs: neither opengrep nor semgrep is installed", file=sys.stderr)
+        return 1
+
+    sample_dir = ROOT / "tests" / "fixtures" / "_audit_sample"
+    sample_dir.mkdir(parents=True, exist_ok=True)
+    (sample_dir / "sample.py").write_text("x = 1\n")
+
+    print(f"Verifying {len(_KNOWN_GOOD_PACKS)} registry packs via {tool}…")
+    failed: list[tuple[str, str]] = []
+    for pack in _KNOWN_GOOD_PACKS:
+        try:
+            r = subprocess.run(
+                [tool, f"--config={pack}", str(sample_dir)],
+                capture_output=True, text=True, timeout=60,
+            )
+            out = (r.stdout or "") + (r.stderr or "")
+            if "HTTP 404" in out or "Failed to download" in out:
+                failed.append((pack, "404"))
+                print(f"  [FAIL] {pack} — 404")
+            else:
+                # Count loaded rules from the scan banner
+                import re
+                m = re.search(r"with (\d+) Code rules", out)
+                rules = m.group(1) if m else "?"
+                print(f"  [ OK ] {pack} ({rules} rules)")
+        except subprocess.TimeoutExpired:
+            failed.append((pack, "timeout"))
+            print(f"  [FAIL] {pack} — timeout")
+        except Exception as exc:
+            failed.append((pack, str(exc)))
+            print(f"  [FAIL] {pack} — {exc}")
+
+    if failed:
+        print(f"\n{len(failed)} pack(s) failed verification.", file=sys.stderr)
+        return 1
+    print(f"\nAll {len(_KNOWN_GOOD_PACKS)} packs verified.")
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument("--probe-tools", action="store_true",
                    help="Probe installed codeql/semgrep binaries for rule IDs.")
+    p.add_argument("--verify-packs", action="store_true",
+                   help="Probe each pack in _KNOWN_GOOD_PACKS via semgrep/opengrep "
+                        "to confirm it still resolves on the registry. Prints a "
+                        "summary and returns non-zero if any 404.")
     p.add_argument("--fail-on-gaps", action="store_true",
                    help="Exit with code 1 if any priority-B or priority-C gaps remain.")
     args = p.parse_args(argv)
 
     OUT_DIR.mkdir(parents=True, exist_ok=True)
+
+    if args.verify_packs:
+        return _verify_known_packs()
 
     rules = _parse_guided_rules()
     cwe_map = _load_cwe_map()

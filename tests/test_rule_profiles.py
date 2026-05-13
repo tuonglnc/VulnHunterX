@@ -206,6 +206,64 @@ class TestCodeQLSuiteStacking:
         assert suites[1].endswith("cpp/suite.qls")
 
 
+class TestExtendedRegistryProfile:
+    """Stage-2 ``extended-registry`` profile carries verified registry packs."""
+
+    def test_profile_exists(self, mgr: RuleProfileManager) -> None:
+        assert "extended-registry" in mgr.profile_names
+
+    def test_universal_packs_present(self, mgr: RuleProfileManager) -> None:
+        p = mgr.get_profile("extended-registry")
+        for pack in ("auto", "p/security-audit", "p/secrets",
+                     "p/owasp-top-ten", "p/cwe-top-25", "p/gitleaks",
+                     "p/jwt", "p/insecure-transport"):
+            assert pack in p.semgrep_configs, f"missing {pack}"
+
+    def test_python_language_packs(self, mgr: RuleProfileManager) -> None:
+        configs = mgr.get_semgrep_configs("extended-registry", lang="python")
+        assert "p/python" in configs
+        assert "p/django" in configs
+        assert "p/flask" in configs
+
+    def test_php_language_packs(self, mgr: RuleProfileManager) -> None:
+        configs = mgr.get_semgrep_configs("extended-registry", lang="php")
+        assert "p/php" in configs
+
+    def test_go_language_packs(self, mgr: RuleProfileManager) -> None:
+        configs = mgr.get_semgrep_configs("extended-registry", lang="go")
+        assert "p/gosec" in configs
+
+    def test_cpp_falls_back_to_universal_only(self, mgr: RuleProfileManager) -> None:
+        # No working p/cpp pack as of Stage-2 — only universal packs apply
+        configs = mgr.get_semgrep_configs("extended-registry", lang="cpp")
+        assert all(not c.startswith("p/cpp") for c in configs)
+        assert "p/security-audit" in configs
+
+    def test_no_lang_means_no_language_specific(self, mgr: RuleProfileManager) -> None:
+        configs = mgr.get_semgrep_configs("extended-registry", lang="")
+        assert "p/django" not in configs
+        assert "p/security-audit" in configs
+
+    def test_opengrep_same_as_semgrep(self, mgr: RuleProfileManager) -> None:
+        sg = mgr.get_semgrep_configs("extended-registry", lang="python")
+        og = mgr.get_opengrep_configs("extended-registry", lang="python")
+        # OpenGrep accepts the same registry handles as Semgrep
+        assert set(sg) == set(og)
+
+
+class TestFullProfileWithLanguageSpecific:
+    """The ``full`` profile inherits all extended-registry packs + custom rules."""
+
+    def test_full_has_language_specific(self, mgr: RuleProfileManager) -> None:
+        configs = mgr.get_semgrep_configs("full", lang="python")
+        assert "p/django" in configs
+        assert "p/flask" in configs
+
+    def test_full_keeps_custom_semgrep_path_field(self, mgr: RuleProfileManager) -> None:
+        p = mgr.get_profile("full")
+        assert "${LANG}" in p.custom_semgrep_path
+
+
 class TestSemgrepConfigExpansion:
     """``get_semgrep_configs`` expands ``${LANG}`` and appends custom path."""
 
