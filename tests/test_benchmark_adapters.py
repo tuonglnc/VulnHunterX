@@ -343,3 +343,39 @@ class TestJulietAdapter:
         adapter = JulietAdapter(tmp_path)
         entries = adapter.load()
         assert len(entries) == 0
+
+
+# ── DiverseVulAdapter ─────────────────────────────────────────────────────────
+
+class TestDiverseVulAdapter:
+    @staticmethod
+    def _write_dataset(tmp_path: Path) -> Path:
+        """Write a 3-record DiverseVul JSONL fixture: two CWE-tagged, one without."""
+        data_file = tmp_path / "diversevul_20230702.json"
+        records = [
+            {"func": "void a() { int x = 0; }", "target": 1, "cwe": "CWE-787",
+             "project": "p", "commit_id": "c1"},
+            {"func": "void b() { int y = 0; }", "target": 1, "cwe": "CWE-416",
+             "project": "p", "commit_id": "c2"},
+            {"func": "void c() { int z = 0; }", "target": 1, "cwe": "",
+             "project": "p", "commit_id": "c3"},
+        ]
+        data_file.write_text("\n".join(json.dumps(r) for r in records))
+        return data_file
+
+    def test_drops_unknown_cwe_by_default(self, tmp_path):
+        from benchmarks.adapters.diversevul_adapter import DiverseVulAdapter
+
+        self._write_dataset(tmp_path)
+        entries = DiverseVulAdapter(tmp_path).load()
+        assert len(entries) == 2
+        assert all(e.cwe_id != "Unknown" for e in entries)
+        assert {e.cwe_id for e in entries} == {"CWE-787", "CWE-416"}
+
+    def test_include_unknown_cwe(self, tmp_path):
+        from benchmarks.adapters.diversevul_adapter import DiverseVulAdapter
+
+        self._write_dataset(tmp_path)
+        entries = DiverseVulAdapter(tmp_path).load(include_unknown_cwe=True)
+        assert len(entries) == 3
+        assert sum(1 for e in entries if e.cwe_id == "Unknown") == 1

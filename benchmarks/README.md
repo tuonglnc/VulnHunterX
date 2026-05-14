@@ -46,7 +46,7 @@ The design rationale, papers reviewed, and dataset selection criteria are in [RE
 | ------------------------ | -------------- | -------------- | ------------------------------------------------------------------------------------------- |
 | **SecLLMHolmes**         | ~228 scenarios | C/C++, Python  | Handcrafted bad/good pairs, 8 CWE classes (MIT)                                             |
 | **Juliet C/C++ 1.3.1**   | 64K cases      | C, C++         | NIST synthetic `bad()`/`good()` function pairs, ~180 CWEs                                   |
-| **DiverseVul**           | 349K functions | C, C++         | 18,945 CVE-backed vulnerable + 330,492 non-vulnerable                                       |
+| **DiverseVul**           | 349K functions | C, C++         | 18,945 CVE-backed vulnerable + 330,492 non-vulnerable (CWE-Unknown rows dropped by default — see playbook) |
 | **OWASP BenchmarkJava**  | ~2,740 cases   | Java           | `expectedresults-1.2.csv` (TP/FP per case, 11 CWE categories) — GPL-2.0                     |
 | **OWASP BenchmarkPython**| ~1,230 cases   | Python         | `expectedresults-0.1.csv` — GPL-3.0                                                         |
 | **RealVuln Benchmark**   | 796 findings   | Python         | Real CVE TPs + curated FP traps across 26 web-framework repos (Flask/Django/FastAPI/aiohttp/Tornado) — MIT |
@@ -183,6 +183,8 @@ python benchmarks/scripts/run_benchmark.py \
 
 Real-world C/C++ functions with CVE-backed labels. Use `--limit` for scale and `--cwe` to target specific classes.
 
+By default, records whose source CVE has no CWE mapping are **dropped at load time**. These entries would otherwise land in a meaningless `"Unknown"` per-CWE bucket and force VulnHunterX into its generic-questions fallback, biasing the rule-specific ablation. Pass `--include-unknown-cwe` if you need the full corpus for binary classification only — the loader logs the dropped count either way.
+
 ```bash
 # Targeted memory-safety dry-run
 python benchmarks/scripts/run_benchmark.py \
@@ -272,6 +274,7 @@ For meaningful `code_snippet` content the adapter reads each function from a wor
 --limit N           Max entries per dataset, 0=all  (default: 0)
 --lang LANG [...]   Filter fixture entries by language: c cpp python javascript php java go
 --cwe CWE [...]     DiverseVul only: filter by CWE ID(s), e.g. CWE-787 CWE-416
+--include-unknown-cwe  DiverseVul only: keep records with no CWE mapping (off by default)
 --juliet-per-cwe N  Juliet only: max entries per CWE, balanced TP/FP.
                     5=small (~40)  20=standard (~160) [default]  0=all CWEs (~64K)
 --max-iterations N  Multi-turn rounds for vulnhunterx/generic  (default: 10)

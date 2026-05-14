@@ -61,12 +61,18 @@ class DiverseVulAdapter:
         self,
         limit: int = 0,
         cwes: list[str] | None = None,
+        include_unknown_cwe: bool = False,
     ) -> list[GroundTruthEntry]:
         """Load entries from DiverseVul dataset.
 
         Args:
             limit: Maximum entries to load (0 = all).
             cwes: Optional list of CWE IDs to filter (e.g. ["CWE-787", "CWE-416"]).
+            include_unknown_cwe: If False (default), drop records whose CVE has
+                no CWE mapping. These pollute per-CWE stratification and force
+                VulnHunterX's guided-question routing into a generic fallback,
+                biasing the rule-specific ablation comparison. Pass True to
+                keep the full corpus for binary-classification-only use.
 
         Returns:
             List of GroundTruthEntry objects.
@@ -81,6 +87,7 @@ class DiverseVulAdapter:
         logger.info("Loading DiverseVul from %s", data_file)
         entries: list[GroundTruthEntry] = []
         seen_hashes: set[str] = set()
+        dropped_unknown_cwe = [0]
 
         cwe_filter = set(cwes) if cwes else None
 
@@ -97,7 +104,10 @@ class DiverseVulAdapter:
                         f.seek(0)
                         records = json.load(f)
                         for rec in records:
-                            entry = self._record_to_entry(rec, seen_hashes, cwe_filter)
+                            entry = self._record_to_entry(
+                                rec, seen_hashes, cwe_filter,
+                                include_unknown_cwe, dropped_unknown_cwe,
+                            )
                             if entry is not None:
                                 entries.append(entry)
                                 if limit and len(entries) >= limit:
@@ -105,7 +115,10 @@ class DiverseVulAdapter:
                         break
                     continue
 
-                entry = self._record_to_entry(record, seen_hashes, cwe_filter)
+                entry = self._record_to_entry(
+                    record, seen_hashes, cwe_filter,
+                    include_unknown_cwe, dropped_unknown_cwe,
+                )
                 if entry is not None:
                     entries.append(entry)
                     if limit and len(entries) >= limit:
@@ -117,6 +130,11 @@ class DiverseVulAdapter:
             sum(1 for e in entries if e.label == LABEL_TP),
             sum(1 for e in entries if e.label == LABEL_FP),
         )
+        if dropped_unknown_cwe[0]:
+            logger.info(
+                "Dropped %d entries with no CWE (pass include_unknown_cwe=True to keep)",
+                dropped_unknown_cwe[0],
+            )
         return entries
 
     def _record_to_entry(
@@ -124,6 +142,8 @@ class DiverseVulAdapter:
         record: dict,
         seen_hashes: set[str],
         cwe_filter: set[str] | None,
+        include_unknown_cwe: bool,
+        dropped_unknown_cwe: list[int],
     ) -> GroundTruthEntry | None:
         """Convert a single DiverseVul record to a GroundTruthEntry."""
         func = record.get("func", "")
@@ -136,6 +156,13 @@ class DiverseVulAdapter:
             cwe_id = f"CWE-{cwe_raw}"
         else:
             cwe_id = cwe_raw.upper() if cwe_raw else "Unknown"
+
+        # Drop Unknown-CWE entries by default — they pollute per-CWE stratification
+        # and break rule-specific guided-question routing. Checked before the
+        # dedup hash insert so dropped records do not poison dedup state.
+        if cwe_id == "Unknown" and not include_unknown_cwe:
+            dropped_unknown_cwe[0] += 1
+            return None
 
         # Apply CWE filter
         if cwe_filter and cwe_id not in cwe_filter:

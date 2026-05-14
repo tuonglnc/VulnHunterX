@@ -44,6 +44,7 @@ import logging
 import os
 import sys
 import time
+from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, wait
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -146,7 +147,7 @@ def _load_fixture(
     return entries
 
 
-def _load_dataset(name: str, limit: int, juliet_per_cwe: int = 20, langs: list[str] | None = None, cwes: list[str] | None = None) -> list[GroundTruthEntry]:
+def _load_dataset(name: str, limit: int, juliet_per_cwe: int = 20, langs: list[str] | None = None, cwes: list[str] | None = None, include_unknown_cwe: bool = False) -> list[GroundTruthEntry]:
     """Load entries for a given dataset name."""
     # Check for fixture files first (for smoke tests)
     fixture = _REPO_ROOT / "benchmarks" / "fixtures" / f"{name}_sample.json"
@@ -214,7 +215,9 @@ def _load_dataset(name: str, limit: int, juliet_per_cwe: int = 20, langs: list[s
         ds_path = DATASETS_DIR / "diversevul"
         if ds_path.exists():
             from benchmarks.adapters.diversevul_adapter import DiverseVulAdapter
-            return DiverseVulAdapter(ds_path).load(limit=limit, cwes=cwes)
+            return DiverseVulAdapter(ds_path).load(
+                limit=limit, cwes=cwes, include_unknown_cwe=include_unknown_cwe,
+            )
         if fixture.exists():
             return _load_fixture(fixture, limit=limit, langs=langs, cwes=cwes)
         raise FileNotFoundError(
@@ -543,6 +546,15 @@ def main() -> int:
         ),
     )
     parser.add_argument(
+        "--include-unknown-cwe",
+        action="store_true",
+        help=(
+            "DiverseVul only: keep records whose CVE has no CWE mapping. "
+            "By default these are dropped because they pollute per-CWE "
+            "stratification and force generic-fallback guided questions."
+        ),
+    )
+    parser.add_argument(
         "--juliet-per-cwe",
         type=int,
         default=20,
@@ -759,7 +771,7 @@ def main() -> int:
         for dataset_name in datasets:
             logger.info("Loading dataset: %s (limit=%d)", dataset_name, args.limit)
             try:
-                entries = _load_dataset(dataset_name, args.limit, juliet_per_cwe=args.juliet_per_cwe, langs=args.lang, cwes=args.cwe)
+                entries = _load_dataset(dataset_name, args.limit, juliet_per_cwe=args.juliet_per_cwe, langs=args.lang, cwes=args.cwe, include_unknown_cwe=args.include_unknown_cwe)
             except FileNotFoundError as exc:
                 logger.error("%s", exc)
                 continue
