@@ -530,7 +530,7 @@ def _question_match_table(summaries: list[dict]) -> str:
     rows_found = False
     match_types = ["exact", "normalized", "prefix", "lang_prefix", "default", "generic"]
     lines = ["| Approach | Dataset | " + " | ".join(t.title() for t in match_types) + " |",
-             "|---|---|" + "|---|" * len(match_types)]
+             "|---|---|" + "---|" * len(match_types)]
     for s in summaries:
         counts = s.get("question_match_counts", {})
         if not counts:
