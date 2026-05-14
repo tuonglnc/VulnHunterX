@@ -348,7 +348,19 @@ def _run_codeql_analyze(
         effective_suite = suite
         if not effective_suite and profile_suffix:
             effective_suite = CodeQLAnalyzer.suite_for_language(lang, profile_suffix)
-        ok, result_path, msg = analyzer.run_analysis(db_path, lang, name, suite=effective_suite)
+        # Stack custom suite when the active profile sets include_custom_codeql.
+        extra_suites: list[str] = []
+        if getattr(args, "_profile_include_custom_codeql", False):
+            codeql_lang = "cpp" if lang in ("c", "cpp") else lang
+            custom_suite = base_path / "config" / "codeql-custom" / codeql_lang / "suite.qls"
+            if custom_suite.is_file():
+                # Skip empty custom packs to avoid CodeQL "no queries" failures.
+                src_dir = custom_suite.parent / "src"
+                if src_dir.is_dir() and any(src_dir.glob("*.ql")):
+                    extra_suites.append(str(custom_suite))
+        ok, result_path, msg = analyzer.run_analysis(
+            db_path, lang, name, suite=effective_suite, extra_suites=extra_suites,
+        )
         if verbose and lines:
             msg = "\n".join(lines) + "\n" + msg
         return name, ok, result_path, msg, False
@@ -391,6 +403,52 @@ def _run_codeql_analyze(
     return 0 if ok_count == len(dbs) else 1
 
 
+def _expand_per_repo_configs(
+    args: argparse.Namespace, configs: list[str], lang: str,
+) -> list[str]:
+    """Resolve final Semgrep/OpenGrep configs for one repo at one language.
+
+    The transformation pipeline is:
+
+    1. Expand ``${LANG}`` placeholders in the input list. For *local file*
+       paths the resolved path must exist (otherwise the entry is dropped);
+       *registry refs* (containing ``:`` or starting with ``p/``/``r/``) are
+       always kept.
+    2. Append per-language packs from
+       ``args._profile_language_specific_configs[lang]`` (set by ``cmd_analyze``
+       when a profile is active).
+    3. Append the profile's ``custom_semgrep_path`` template, resolved for
+       this language, when the resolved file exists.
+
+    Returns a new list — does not mutate ``configs``.
+    """
+    expanded: list[str] = []
+    for c in configs:
+        if isinstance(c, str) and "${LANG}" in c:
+            resolved = c.replace("${LANG}", lang)
+            # Registry refs (no path semantics) cannot be filesystem-checked;
+            # accept anything that looks like a Semgrep registry handle.
+            if resolved.startswith(("p/", "r/")) or ":" in resolved:
+                expanded.append(resolved)
+            elif Path(resolved).is_file():
+                expanded.append(resolved)
+            # else: drop — local-path template that didn't resolve
+        else:
+            expanded.append(c)
+
+    lang_specific = getattr(args, "_profile_language_specific_configs", None) or {}
+    for c in lang_specific.get(lang, []):
+        if c not in expanded:
+            expanded.append(c)
+
+    custom_path = getattr(args, "_profile_custom_semgrep_path", "") or ""
+    if custom_path:
+        resolved = custom_path.replace("${LANG}", lang)
+        if Path(resolved).is_file() and resolved not in expanded:
+            expanded.append(resolved)
+    return expanded
+
+
 def _run_semgrep_analyze(
     args: argparse.Namespace,
     base_path: Path,
@@ -419,14 +477,24 @@ def _run_semgrep_analyze(
                 continue
             repo_list.append((lang, name))
 
-    # Fallback: discover repos from filesystem (supports clone --url / --local-path)
-    if not repo_list:
-        repo_list = _discover_repos_from_filesystem(repos_dir)
-
+    # Apply filters before the fallback so that --local-path repos not in
+    # repos.yaml still trigger filesystem discovery.
     if args.lang:
         repo_list = [(lang, name) for lang, name in repo_list if lang == args.lang]
     if args.repo:
         repo_list = [(lang, name) for lang, name in repo_list if name.lower() == args.repo.lower()]
+
+    # Fallback: discover repos from filesystem (supports clone --url / --local-path)
+    if not repo_list:
+        repo_list = _discover_repos_from_filesystem(repos_dir)
+        if args.lang:
+            repo_list = [(lang, name) for lang, name in repo_list if lang == args.lang]
+        if args.repo:
+            repo_list = [
+                (lang, name)
+                for lang, name in repo_list
+                if name.lower() == args.repo.lower()
+            ]
 
     if not repo_list:
         print(
@@ -478,13 +546,17 @@ def _run_semgrep_analyze(
             ok_count += 1
             continue
         print(f"[{name}] {lang}")
+        # Per-repo expansion: ${LANG} → repo's language; append custom-semgrep-path
+        # from the rule profile when it resolves to an existing file.
+        repo_configs = _expand_per_repo_configs(args, configs, lang)
         if getattr(args, "dry_run", False):
             print(f"  [dry-run] Would run Semgrep on {repo_path}")
+            print(f"  [dry-run] Configs: {repo_configs}")
             print(f"  [dry-run] Output: {semgrep_sarif}")
             ok_count += 1
             continue
         ok, result_path, msg = analyzer.run_analysis(
-            repo_path, lang, name, output_dir, configs=configs
+            repo_path, lang, name, output_dir, configs=repo_configs
         )
         if ok:
             ok_count += 1
@@ -529,14 +601,24 @@ def _run_opengrep_analyze(
                 continue
             repo_list.append((lang, name))
 
-    # Fallback: discover repos from filesystem (supports clone --url / --local-path)
-    if not repo_list:
-        repo_list = _discover_repos_from_filesystem(repos_dir)
-
+    # Apply filters before the fallback so that --local-path repos not in
+    # repos.yaml still trigger filesystem discovery.
     if args.lang:
         repo_list = [(lang, name) for lang, name in repo_list if lang == args.lang]
     if args.repo:
         repo_list = [(lang, name) for lang, name in repo_list if name.lower() == args.repo.lower()]
+
+    # Fallback: discover repos from filesystem (supports clone --url / --local-path)
+    if not repo_list:
+        repo_list = _discover_repos_from_filesystem(repos_dir)
+        if args.lang:
+            repo_list = [(lang, name) for lang, name in repo_list if lang == args.lang]
+        if args.repo:
+            repo_list = [
+                (lang, name)
+                for lang, name in repo_list
+                if name.lower() == args.repo.lower()
+            ]
 
     if not repo_list:
         print(
@@ -587,13 +669,15 @@ def _run_opengrep_analyze(
             ok_count += 1
             continue
         print(f"[{name}] {lang}")
+        repo_configs = _expand_per_repo_configs(args, configs, lang)
         if getattr(args, "dry_run", False):
             print(f"  [dry-run] Would run OpenGrep on {repo_path}")
+            print(f"  [dry-run] Configs: {repo_configs}")
             print(f"  [dry-run] Output: {opengrep_sarif}")
             ok_count += 1
             continue
         ok, result_path, msg = analyzer.run_analysis(
-            repo_path, lang, name, output_dir, configs=configs
+            repo_path, lang, name, output_dir, configs=repo_configs
         )
         if ok:
             ok_count += 1
@@ -706,7 +790,13 @@ def cmd_analyze(args: argparse.Namespace) -> int:
             if getattr(args, "codeql_suite", None) is None:
                 # Store suffix for per-language resolution in _run_codeql_analyze
                 args._profile_codeql_suffix = profile.codeql_suite_suffix
+            # Surface custom-rule flags downstream
+            args._profile_include_custom_codeql = profile.include_custom_codeql
+            args._profile_custom_semgrep_path = profile.custom_semgrep_path
+            args._profile_language_specific_configs = profile.language_specific_configs
             if not getattr(args, "semgrep_configs", None):
+                # Expand ${LANG} now if a single lang is selected; otherwise per-repo
+                # expansion happens inside _run_semgrep_analyze.
                 args.semgrep_configs = list(profile.semgrep_configs)
             if not getattr(args, "opengrep_configs", None):
                 args.opengrep_configs = list(profile.opengrep_configs)

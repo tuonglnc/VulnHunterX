@@ -46,7 +46,7 @@ java/xss:
   context_hint: "Trace from input through all assignments to HTTP response output."
   additional_context: ["caller"]
 
-java/command-line-injection:
+java/command-injection:
   short_description: "User input passed to Runtime.exec() or ProcessBuilder in Java"
   questions:
     - "Where does the INPUT originate — HTTP request, file upload, database, or config?"
@@ -174,7 +174,7 @@ java/insecure-randomness:
   context_hint: "Include the Random instantiation and how the generated value is used."
   additional_context: ["caller"]
 
-java/hardcoded-credential-in-source:
+java/hardcoded-credentials:
   short_description: "Hardcoded password, API key, or secret in Java source code"
   questions:
     - "Is this string a real credential used in production, or a placeholder/example/test value?"
