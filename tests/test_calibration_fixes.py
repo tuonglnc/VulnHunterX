@@ -218,6 +218,140 @@ class TestCweMinIterationsOverride:
         assert q.min_iterations == 1
 
 
+class TestPythonTaintMinIterations:
+    """2026-05-19 owasp-python: taint-tracking CWEs (CWE-22, CWE-643, …)
+    are bumped to min_iterations=2 ONLY on framework languages so the C-side
+    diversevul/CWE-264 baseline isn't perturbed."""
+
+    def setup_method(self):
+        self.loader = QuestionsLoader()
+        self.loader.questions["py/path-injection"] = GuidedQuestions(
+            rule_id="py/path-injection",
+            short_description="path",
+            questions=["?"],
+            min_iterations=1,
+        )
+
+    def test_python_cwe_22_bumps_min_iterations(self):
+        q = self.loader.get_questions(
+            "py/path-injection", cwe_ids=["CWE-22"], lang="python",
+        )
+        assert q.min_iterations == 2
+
+    def test_python_cwe_643_bumps_min_iterations(self):
+        q = self.loader.get_questions(
+            "py/path-injection", cwe_ids=["CWE-643"], lang="python",
+        )
+        assert q.min_iterations == 2
+
+    def test_c_cwe_22_does_not_bump(self):
+        # CWE-22 in C is uncommon but possible; the override is gated to
+        # framework langs so C verdicts are unaffected.
+        q = self.loader.get_questions(
+            "py/path-injection", cwe_ids=["CWE-22"], lang="c",
+        )
+        assert q.min_iterations == 1
+
+    def test_javascript_cwe_79_bumps_min_iterations(self):
+        q = self.loader.get_questions(
+            "py/path-injection", cwe_ids=["CWE-79"], lang="javascript",
+        )
+        assert q.min_iterations == 2
+
+    def test_access_control_cwe_still_unconditional(self):
+        # Access-control CWEs apply across all languages — they have an
+        # empty langs frozenset meaning "all".
+        q = self.loader.get_questions(
+            "py/path-injection", cwe_ids=["CWE-264"], lang="c",
+        )
+        assert q.min_iterations == 2
+
+
+class TestCweRuleMapCanonicalPyKeys:
+    """The CWE_TO_RULES first-py-entry must match the python_questions.yaml
+    canonical key for the taint CWEs we exercised — otherwise the
+    benchmark falls back to the bidirectional prefix match (22% rate in
+    the 2026-05-19 owasp-python run)."""
+
+    def test_cwe_643_first_py_is_canonical(self):
+        from benchmarks.adapters.cwe_rule_map import primary_rule_for_lang
+        assert primary_rule_for_lang("CWE-643", "python") == "py/xpath-injection"
+
+    def test_cwe_79_first_py_is_canonical(self):
+        from benchmarks.adapters.cwe_rule_map import primary_rule_for_lang
+        assert primary_rule_for_lang("CWE-79", "python") == "py/xss"
+
+    def test_cwe_22_first_py_is_canonical(self):
+        from benchmarks.adapters.cwe_rule_map import primary_rule_for_lang
+        assert primary_rule_for_lang("CWE-22", "python") == "py/path-injection"
+
+    def test_cwe_89_first_py_is_canonical(self):
+        from benchmarks.adapters.cwe_rule_map import primary_rule_for_lang
+        assert primary_rule_for_lang("CWE-89", "python") == "py/sql-injection"
+
+
+class TestSecondOpinionTaintArm:
+    """The third trigger arm (TP/High/1-iter on framework-lang taint CWE)
+    must fire on Python web findings and stay silent on C."""
+
+    def test_predicate_fires_on_python_taint_tp(self):
+        # Replicates the boolean condition in
+        # verification.engine._verify_single_finding (arm_c).
+        from vuln_hunter_x.verification.engine import _FRAMEWORK_LANGS, _TAINT_CWES
+        finding = Finding(
+            rule_id="py/path-injection", message="CWE-22 trap",
+            file="x.py", start_line=1, end_line=1,
+            repo_name="r", lang="python", cwe_ids=["CWE-22"],
+        )
+        verdict = _verdict("True Positive", "High", "user input flows to open()")
+        verdict.iterations = 1
+        is_tp = verdict.verdict in ("True Positive", "TP")
+        arm_c = (
+            is_tp
+            and verdict.confidence == "High"
+            and verdict.iterations == 1
+            and finding.lang in _FRAMEWORK_LANGS
+            and bool(set(finding.cwe_ids or []) & _TAINT_CWES)
+        )
+        assert arm_c is True
+
+    def test_predicate_silent_on_c_taint_tp(self):
+        from vuln_hunter_x.verification.engine import _FRAMEWORK_LANGS, _TAINT_CWES
+        finding = Finding(
+            rule_id="cpp/overflow-buffer", message="CWE-787",
+            file="x.c", start_line=1, end_line=1,
+            repo_name="r", lang="c", cwe_ids=["CWE-22"],
+        )
+        verdict = _verdict("True Positive", "High", "buffer overflow")
+        verdict.iterations = 1
+        arm_c = (
+            verdict.verdict in ("True Positive", "TP")
+            and verdict.confidence == "High"
+            and verdict.iterations == 1
+            and finding.lang in _FRAMEWORK_LANGS
+            and bool(set(finding.cwe_ids or []) & _TAINT_CWES)
+        )
+        assert arm_c is False
+
+    def test_predicate_silent_on_non_taint_cwe(self):
+        from vuln_hunter_x.verification.engine import _FRAMEWORK_LANGS, _TAINT_CWES
+        finding = Finding(
+            rule_id="py/csrf", message="csrf",
+            file="x.py", start_line=1, end_line=1,
+            repo_name="r", lang="python", cwe_ids=["CWE-352"],
+        )
+        verdict = _verdict("True Positive", "High", "csrf missing")
+        verdict.iterations = 1
+        arm_c = (
+            verdict.verdict in ("True Positive", "TP")
+            and verdict.confidence == "High"
+            and verdict.iterations == 1
+            and finding.lang in _FRAMEWORK_LANGS
+            and bool(set(finding.cwe_ids or []) & _TAINT_CWES)
+        )
+        assert arm_c is False
+
+
 class TestSnippetContextProvider:
     """The snippet-derived fallback provider — used when CSV context is
     unavailable, restoring the multi-turn loop instead of silently giving up."""

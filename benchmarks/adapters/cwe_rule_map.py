@@ -42,11 +42,12 @@ CWE_TO_RULES: dict[str, list[str]] = {
     "CWE-22":  ["py/path-injection", "js/path-injection", "php/path-injection",
                  "cpp/path-injection", "java/path-injection"],
     "CWE-94":  ["py/code-injection", "js/code-injection"],
-    "CWE-79":  ["js/xss", "py/reflected-xss", "php/reflected-xss",
-                 "java/xss"],
+    "CWE-79":  ["js/xss", "py/xss", "py/reflected-xss",
+                 "php/reflected-xss", "java/xss"],
     "CWE-917": ["js/template-injection"],
     "CWE-90":  ["java/ldap-injection", "py/ldap-injection"],
-    "CWE-643": ["java/xpath-injection", "py/xpath-injection-from-tainted-data"],
+    "CWE-643": ["py/xpath-injection", "java/xpath-injection",
+                 "py/xpath-injection-from-tainted-data"],
 
     # Python-specific
     "CWE-502": ["py/unsafe-deserialization", "py/unsafe-yaml"],
