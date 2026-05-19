@@ -9,8 +9,11 @@ Thank you for your interest in contributing! This guide covers the development w
 git clone https://github.com/vinsoc-cyber/VulnHunterX.git
 cd VulnHunterX
 uv venv --python python3.12 .venv && source .venv/bin/activate
-pip install -e ".[dev]"
+uv pip install -e ".[dev]"
 ```
+
+> Requires [uv](https://docs.astral.sh/uv/). Plain `python3.12 -m venv` +
+> `pip install -e ".[dev]"` works too.
 
 ## Code Style
 

@@ -72,12 +72,15 @@ The **Vulnhalla** methodology forces the LLM to:
 
 ```bash
 git clone https://github.com/vinsoc-cyber/VulnHunterX.git && cd VulnHunterX
-python3.12 -m venv .venv && source .venv/bin/activate
-pip install -e .
+uv venv --python python3.12 .venv && source .venv/bin/activate
+uv pip install -e ".[dev]"
 
 cp env.example .env       # add OPENAI_API_KEY / ANTHROPIC_API_KEY / OLLAMA_API_BASE
 vuln-hunter-x check-env   # verify toolchain
 ```
+
+> Requires [uv](https://docs.astral.sh/uv/) (`curl -LsSf https://astral.sh/uv/install.sh | sh`).
+> Plain `python3.12 -m venv .venv` + `pip install -e ".[dev]"` also works if you'd rather not install `uv`.
 
 ### First run
 

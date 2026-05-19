@@ -290,7 +290,33 @@ python benchmarks/scripts/run_benchmark.py \
     --run-dir benchmarks/results/realvuln
 ```
 
-For meaningful `code_snippet` content the adapter reads each function from a working tree at `benchmarks/datasets/realvuln/_repos/<repo_id>/`. You are responsible for checking out the matching `commit_sha` (recorded per finding) into that path. When the working tree is absent the snippet is left empty and tagged `metadata.snippet_kind = "missing"` — the entry still scores for `raw-sast` comparison, but downstream LLM approaches need the source.
+For meaningful `code_snippet` content the adapter reads each function
+from a working tree at `benchmarks/datasets/realvuln/_repos/<repo_id>/`.
+When the working tree is absent the snippet is left empty and tagged
+`metadata.snippet_kind = "missing"` — the entry still scores for
+`raw-sast` comparison, but downstream LLM approaches need the source.
+
+#### Populating `_repos/<repo_id>/`
+
+The dataset ships a helper that clones all 26 benchmark repos at their
+pinned `commit_sha` values:
+
+```bash
+cd benchmarks/datasets/realvuln
+python3 clone_repos.py             # clones all 26 repos under _repos/
+python3 clone_repos.py --repo juice-shop   # single repo
+python3 smoke_test.py              # verify checkouts match expected SHAs
+```
+
+After cloning, return to the repo root and re-run `run_benchmark.py`:
+the adapter will resolve snippets from the new working trees
+automatically (no flag required). Estimated disk: ~3.5 GB for the full
+set; ~150 MB per repo on average.
+
+If you've already checked out some repos elsewhere on disk, you can
+either symlink them in (`ln -s ~/code/juice-shop _repos/juice-shop`)
+or pass `repos_cache` programmatically when calling
+`RealVulnAdapter()` directly.
 
 ---
 
