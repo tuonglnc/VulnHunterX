@@ -25,24 +25,25 @@
 py/sql-injection:
   short_description: "User input concatenated into SQL query"
   questions:
-    - "Where does the INPUT originate - request.args, request.form, request.json, or other?"
-    - "Trace the INPUT through ALL assignments - is it ever SANITIZED?"
-    - "Is the query built using f-strings, .format(), +, or % (all vulnerable)?"
-    - "Or is cursor.execute() called with PLACEHOLDERS and a tuple (safe)?"
-    - "Is an ORM used — Django .filter()/.exclude(), SQLAlchemy .filter_by()/.where(), Peewee .where() — or raw SQL?"
-    - "What is the DATABASE and does the driver support parameterization?"
+    - "Quote the EXACT sink statement (cursor.execute / session.execute / connection.execute, line N) and name the variable passed to it. Do not paraphrase."
+    - "List EVERY assignment to that variable on each path that reaches the sink, with line numbers. Identify the LAST assignment that executes on each path."
+    - "For each LAST assignment, determine whether the value derives from user input (request.args/form/json/cookies/headers/env) or from a constant/safe source. Cite the data-flow chain step by step."
+    - "Are there constant-time conditions or reassignments that override the user-tainted value on the reaching path? (e.g. `if always_true: var = const`; `var = lookup['safe_key']`; `var = lst[i]` after `lst.pop(0)`.) Quote them with line numbers."
+    - "What specific defense, if any, sanitises the value before the sink? Name it concretely — e.g. parameterised `cursor.execute(sql, params)`, Django ORM `.filter(**kwargs)`, SQLAlchemy `text(sql).bindparams(...)`. Vague 'sanitisation' is not acceptable."
+    - "If you cannot point to the user-tainted value reaching the sink with concrete line numbers AND identify the absence of every defense above, verdict False Positive."
   context_hint: "Trace from request input through all transformations to query execution."
   additional_context: ["caller"]
+  min_iterations: 2
 
 py/command-injection: &py_command_injection
   short_description: "User input passed to shell command execution"
   questions:
-    - "Where does the INPUT originate - request, file, environment variable?"
-    - "Is subprocess called with shell=True (vulnerable) or shell=False (safer)?"
-    - "If shell=True, is shlex.quote() used to ESCAPE the input?"
-    - "If shell=False, is the input passed as a LIST of arguments (safe)?"
-    - "Could an attacker inject SHELL METACHARACTERS?"
-    - "Is os.system() used (always vulnerable) vs subprocess.run()?"
+    - "Quote the EXACT sink (subprocess.run/Popen/call, os.system, os.popen, line N) and name the value passed as the command argument."
+    - "List EVERY assignment to that value on each path that reaches the sink, with line numbers. Identify the LAST assignment that executes on each path."
+    - "For each LAST assignment, determine whether the value derives from user input or from a constant/safe source. Cite the data-flow chain."
+    - "Are there constant-time conditions or reassignments that override the user-tainted value on the reaching path? Quote them with line numbers."
+    - "What specific defense, if any, sanitises the value? Name it concretely — e.g. `shlex.quote()` with `shell=True`, `subprocess.run([...], shell=False)` argv list, allow-list of binary names. Vague 'escaping' is not acceptable."
+    - "If you cannot point to the user-tainted value reaching the sink with concrete line numbers AND identify the absence of every defense above, verdict False Positive."
   context_hint: "Trace from input source to subprocess/os.system call, including intermediate transformations."
   additional_context: ["caller", "class"]
   min_iterations: 2
@@ -53,62 +54,68 @@ py/command-line-injection: *py_command_injection
 py/xss:
   short_description: "User input rendered in HTML response without escaping"
   questions:
-    - "Where does the INPUT originate - request.args, request.form, database?"
-    - "Is the input passed through an ESCAPE function (escape(), html.escape())?"
-    - "Is a TEMPLATE ENGINE used with auto-escaping enabled?"
-    - "Or is the response built with f-strings/concatenation (vulnerable)?"
-    - "Is |safe or {% autoescape false %} used to DISABLE escaping?"
-    - "What is the CONTENT-TYPE of the response (text/html triggers XSS)?"
+    - "Quote the EXACT sink (template render, Response/HttpResponse with html, jsonify-with-mimetype-html, Markup(...), line N) and name the value being rendered."
+    - "List EVERY assignment to that value on each path that reaches the sink, with line numbers. Identify the LAST assignment on each path."
+    - "For each LAST assignment, determine whether the value derives from user input or from a constant/safe source. Cite the data-flow chain."
+    - "Are there constant-time conditions or reassignments that override the user-tainted value on the reaching path? Quote them with line numbers."
+    - "What specific defense, if any, escapes the value at the sink? Name it concretely — e.g. Jinja2 auto-escape enabled, Django template auto-escape, explicit `html.escape()` / `markupsafe.escape()` / `bleach.clean(...)` call, framework `safe`-equivalent helper. Vague 'escaping' is not acceptable."
+    - "Is `|safe` / `{% autoescape false %}` / `Markup(...)` / `mark_safe(...)` used to DISABLE escaping on the user-tainted path? Quote the disabler with line number."
+    - "If you cannot point to the user-tainted value reaching the sink with concrete line numbers AND identify the absence of every defense above, verdict False Positive."
   context_hint: "Trace from input source through template/response construction."
   additional_context: ["caller"]
+  min_iterations: 2
 
 py/unsafe-deserialization:
   short_description: "Deserializing untrusted data with pickle or yaml.load"
   questions:
-    - "Where does the SERIALIZED DATA come from - request body, file, database?"
-    - "Is pickle.loads(), yaml.load(), marshal.loads(), shelve.open(), or dill.loads() used (all vulnerable to code execution)?"
-    - "Could an attacker CONTROL the serialized data content?"
-    - "Does the serialized data contain class/type information that triggers code execution during deserialization?"
-    - "Is there any VALIDATION of the data before deserialization?"
-    - "What CLASS or TYPE is expected to be deserialized?"
+    - "Quote the EXACT deserialization sink (pickle.loads/load, yaml.load, marshal.loads, shelve.open, dill.loads, jsonpickle.decode, line N) and name the bytes/text value passed to it."
+    - "List EVERY assignment to that value on each path that reaches the sink, with line numbers. Identify the LAST assignment on each path."
+    - "For each LAST assignment, determine whether the value derives from user input (request body / upload / network / cookie) or from a constant/internal source. Cite the data-flow chain."
+    - "Are there constant-time conditions or reassignments that override the user-tainted value on the reaching path? Quote them with line numbers."
+    - "What specific defense, if any, prevents code execution? Name it concretely — e.g. `yaml.safe_load()` (not `yaml.load()`), `json.loads()` instead of `pickle.loads()`, `restrictedpickle` allow-list, HMAC signature verified BEFORE deserialisation, schema validation pre-parse. Vague 'validation' is not acceptable."
+    - "If you cannot point to user-controlled data reaching the unsafe sink with concrete line numbers AND identify the absence of every defense above, verdict False Positive."
   context_hint: "Trace from data source to deserialization call."
   additional_context: ["caller"]
+  min_iterations: 2
 
 py/path-injection:
   short_description: "User input used in file path allowing directory traversal"
   questions:
-    - "Where does the PATH input originate - request parameter, form field?"
-    - "Is os.path.join() used (note: it does NOT prevent traversal if input starts with /)?"
-    - "Is the path NORMALIZED with os.path.realpath() or os.path.abspath()?"
-    - "After normalization, is the result CHECKED to start with the allowed base directory?"
-    - "Could '../' sequences or absolute paths escape the intended directory?"
-    - "What FILE OPERATIONS are performed (read, write, delete)?"
+    - "Quote the EXACT file-operation sink (open / Path(...).read_text / shutil.copy / send_file / send_from_directory, line N) and name the path value passed to it."
+    - "List EVERY assignment to that path value on each path that reaches the sink, with line numbers. Identify the LAST assignment on each path."
+    - "For each LAST assignment, determine whether the value derives from user input (request.args / form / json / path-parameter / upload filename) or from a constant/safe source. Cite the data-flow chain step by step."
+    - "Are there constant-time conditions or reassignments that override the user-tainted value on the reaching path? Quote them with line numbers — common OWASP FP traps: `if always_true: var = const`, `var = lookup_map['safe_key']` after a previous `var = param`, `var = lst[i]` after `lst.pop(0)` changes indices, blocklist `if '../' in var: return`."
+    - "What specific defense, if any, contains the path? Name it concretely — e.g. `werkzeug.utils.secure_filename`, `Path(base).resolve() / user_input` then `.is_relative_to(base)`, `os.path.commonpath([base, full]) == base`, `Path.relative_to` raising on escape, allow-list of filenames. Vague 'sanitisation' is not acceptable."
+    - "If you cannot point to the user-tainted value reaching the sink with concrete line numbers AND identify the absence of every defense above, verdict False Positive."
   context_hint: "Trace from input through path construction to file operation."
   additional_context: ["caller"]
+  min_iterations: 2
 
 py/code-injection:
   short_description: "User input passed to eval/exec/compile"
   questions:
-    - "Where does the INPUT come from - request, file, environment?"
-    - "Is eval(), exec(), or compile() called with user-controlled data?"
-    - "Is there ANY validation or sandboxing of the input?"
-    - "Is the input expected to be a data literal (string, number, list, dict) or arbitrary executable code?"
-    - "What CODE could an attacker execute - import os, __import__, etc.?"
-    - "Is the eval in a restricted namespace or with full globals?"
+    - "Quote the EXACT sink (eval / exec / compile / `__import__`, line N) and name the value passed to it."
+    - "List EVERY assignment to that value on each path that reaches the sink, with line numbers. Identify the LAST assignment on each path."
+    - "For each LAST assignment, determine whether the value derives from user input or from a constant/safe source. Cite the data-flow chain."
+    - "Are there constant-time conditions or reassignments that override the user-tainted value on the reaching path? Quote them with line numbers."
+    - "What specific defense, if any, prevents arbitrary code? Name it concretely — e.g. `ast.literal_eval()` (data literals only), strict allow-list (e.g. `if expr in {'+', '-', '*'}: …`), restricted globals dict that excludes `__builtins__`. Vague 'validation' is not acceptable."
+    - "If you cannot point to the user-tainted value reaching the sink with concrete line numbers AND identify the absence of every defense above, verdict False Positive."
   context_hint: "Trace from input source to eval/exec call."
   additional_context: ["caller"]
+  min_iterations: 2
 
 py/ssrf:
   short_description: "Server-side request forgery via user-controlled URL"
   questions:
-    - "Where does the URL come from - request parameter, database, config?"
-    - "Is the URL VALIDATED against an allowlist of domains/hosts?"
-    - "Could an attacker specify an INTERNAL IP (127.0.0.1, 169.254.x.x, 10.x.x.x)?"
-    - "Is the URL SCHEME validated (http/https only, not file://)?"
-    - "What RESPONSE data is returned to the user or used server-side?"
-    - "Are HTTP redirects followed automatically, and could an attacker chain a redirect from an allowlisted URL to an internal IP to probe internal services, exfiltrate data, or bypass DNS rebinding protections?"
+    - "Quote the EXACT HTTP/network sink (requests.get/post/Session.request, urllib.request.urlopen, httpx.get, aiohttp.ClientSession.get, urllib3.PoolManager.request, line N) and name the URL value passed to it."
+    - "List EVERY assignment to that URL value on each path that reaches the sink, with line numbers. Identify the LAST assignment on each path."
+    - "For each LAST assignment, determine whether the value derives from user input or from a constant/safe source. Cite the data-flow chain."
+    - "Are there constant-time conditions or reassignments that override the user-tainted value on the reaching path? Quote them with line numbers."
+    - "What specific defense, if any, restricts the URL? Name it concretely — e.g. `urlparse(url).netloc in ALLOWED_HOSTS`, scheme allow-list (`urlparse(url).scheme in {'http','https'}`), `ipaddress.ip_address(socket.gethostbyname(host)).is_private` rejection, `allow_redirects=False` + post-redirect re-validation, DNS-rebinding defense. Vague 'allowlist' is not acceptable."
+    - "If you cannot point to user-controlled URL reaching the sink with concrete line numbers AND identify the absence of every defense above, verdict False Positive."
   context_hint: "Trace from URL input through request construction."
   additional_context: ["caller"]
+  min_iterations: 2
 
 # ==============================================================================
 # Python - Authentication & Session Security
@@ -182,14 +189,15 @@ py/race-condition:
 py/xxe:
   short_description: "XML parser configured to allow external entity resolution"
   questions:
-    - "Which XML library is used (lxml, xml.etree, minidom, xmltodict, defusedxml)?"
-    - "Is the XML input from an untrusted source (request body, uploaded file, network)?"
-    - "Are external entities explicitly DISABLED (e.g., lxml with resolve_entities=False, no_network=True)?"
-    - "Is defusedxml used as a safe drop-in replacement?"
-    - "Could an attacker use an XXE payload to read local files (/etc/passwd) or perform SSRF?"
-    - "Is DTD processing disabled, or could an attacker define a DOCTYPE with external entities?"
+    - "Quote the EXACT XML-parse sink (lxml.etree.parse/fromstring, xml.etree.ElementTree.parse, xml.dom.minidom.parseString, xmltodict.parse, line N) and name the parser/XMLParser object plus the input bytes/text passed to it."
+    - "List EVERY assignment to the XML input on each path that reaches the parse call, with line numbers. Identify the LAST assignment on each path."
+    - "For each LAST assignment, determine whether the value derives from user input (request body / upload / external API) or from a constant/internal source. Cite the data-flow chain."
+    - "Quote the parser configuration: which options are set (or relied on as defaults)? lxml `XMLParser(resolve_entities=False, no_network=True, load_dtd=False)`; xml.etree's default secure-by-default in py3.7.1+; `defusedxml.ElementTree.fromstring` (always safe)."
+    - "Is the parser one of the safe-by-default constructions above, or is it a configuration that ENABLES external entities / DTD loading / network? Cite the line."
+    - "If you cannot demonstrate that the parser ENABLES external entities AND that the input is user-controlled, verdict False Positive — many Python parsers are safe-by-default."
   context_hint: "Include XML parser initialization and all parsing options."
   additional_context: ["caller"]
+  min_iterations: 2
 
 py/information-exposure:
   short_description: "Stack trace, exception detail, or internal path returned to user"
@@ -222,26 +230,28 @@ py/deprecated-api:
 py/ldap-injection:
   short_description: "LDAP query or filter built from untrusted user input"
   questions:
-    - "Where does the INPUT originate — request.args, request.form, request.json, or other user-controlled source?"
-    - "Is the input concatenated directly into an LDAP filter string (e.g., f'(uid={user})')?"
-    - "Is the input ESCAPED using ldap3's escape_filter_chars() or equivalent before use?"
-    - "Could an attacker inject LDAP metacharacters (* ( ) \\ NUL) to alter the filter — e.g., authentication bypass via (uid=*)?"
-    - "What LDAP operations are affected — ldap3.Connection.search, python-ldap.search?"
-    - "Would using parameterized search filters or a strict allowlist of alphanumeric characters prevent this?"
+    - "Quote the EXACT sink (ldap3.Connection.search, ldap.search, ldap.search_s/search_ext_s, line N) and name the filter string passed to it."
+    - "List EVERY assignment to that filter string on each path that reaches the sink, with line numbers. Identify the LAST assignment on each path."
+    - "For each LAST assignment, determine whether the value derives from user input or from a constant/safe source. Cite the data-flow chain."
+    - "Are there constant-time conditions or reassignments that override the user-tainted value on the reaching path? Quote them with line numbers."
+    - "What specific defense, if any, escapes the value? Name it concretely — e.g. `ldap3.utils.conv.escape_filter_chars(user)`, `ldap.filter.escape_filter_chars(user)`, strict alphanumeric allow-list. Vague 'escaping' is not acceptable."
+    - "If you cannot point to the user-tainted value reaching the sink with concrete line numbers AND identify the absence of every defense above, verdict False Positive."
   context_hint: "Trace from request input through LDAP filter construction to search call."
   additional_context: ["caller"]
+  min_iterations: 2
 
 py/xpath-injection:
   short_description: "XPath expression built from untrusted user input"
   questions:
-    - "Where does the INPUT originate — request parameter, form field, or other user-controlled source?"
-    - "Is the input concatenated into an XPath string (e.g., f\"//user[name='{user}']\")?"
-    - "Is the input ESCAPED or validated to reject XPath metacharacters (', \", [, ], /)?"
-    - "Could an attacker inject a payload like ' or '1'='1 to bypass authentication or extract all data?"
-    - "What library is used (lxml, xml.etree) and does it support parameterized XPath with variables?"
-    - "Would using lxml's XPath variable binding (e.g., xpath('//user[name=$n]', n=user)) prevent injection?"
+    - "Quote the EXACT XPath sink (`Element.xpath(...)` / `XPath(...)(node)` / `etree.XPath(...)` / `findall(...)` / `find(...)`, line N) and name the XPath-string value passed to it."
+    - "List EVERY assignment to that XPath value on each path that reaches the sink, with line numbers. Identify the LAST assignment on each path."
+    - "For each LAST assignment, determine whether the value derives from user input or from a constant/safe source. Cite the data-flow chain — explicitly handle: (a) list element indices after `list.pop(0)`, (b) dict lookups where the key is constant even if values are tainted, (c) ternary/if branches where one side is constant, (d) tuple/list literals like `['safe', param, 'moresafe']`."
+    - "Are there constant-time conditions or reassignments that override the user-tainted value on the reaching path? Quote them with line numbers. (OWASP-Python FP cases commonly use these.)"
+    - "What specific defense, if any, neutralises the value? Name it concretely — e.g. lxml variable binding `node.xpath('//user[name=$n]', n=user)`, strict allow-list of metacharacters via `re.match`, `defusedxml`. Apostrophe-only blocklist is NOT a complete defense (other metacharacters bypass)."
+    - "If you cannot point to the user-tainted value reaching the sink with concrete line numbers AND identify the absence of every defense above, verdict False Positive."
   context_hint: "Trace from input through XPath string construction to evaluate call."
   additional_context: ["caller"]
+  min_iterations: 2
 
 py/log-injection:
   short_description: "Unsanitized user input written to logs enabling log forging"
@@ -270,26 +280,41 @@ py/html-injection:
 py/template-injection:
   short_description: "User input embedded in a Jinja2/Mako/Chameleon template string"
   questions:
-    - "Where does the INPUT originate — request parameter, database field, config file?"
-    - "Is the input used as the TEMPLATE SOURCE (e.g., jinja2.Template(user_input)) rather than a template variable?"
-    - "Could an attacker inject Jinja2 expressions like {{7*7}} or {{config}} to execute Python code?"
-    - "Is the template rendered in a SANDBOX (jinja2.sandbox.SandboxedEnvironment) that restricts dangerous operations?"
-    - "If sandboxed, is the sandbox escape-resistant (Jinja2 sandbox has known bypasses)?"
-    - "Would treating user input as data (passed as template variable) rather than template code fix this?"
+    - "Quote the EXACT template-render sink (`jinja2.Template(...)(...)`, `Environment.from_string(...).render(...)`, `mako.template.Template(...).render(...)`, `chameleon.PageTemplate(...)`, line N) and name the template-source string passed to it."
+    - "List EVERY assignment to that template-source string on each path that reaches the sink, with line numbers. Identify the LAST assignment on each path. CRITICAL: distinguish the template SOURCE (vulnerable if tainted) from template VARIABLES passed via `render(**ctx)` (safe with auto-escape)."
+    - "For each LAST assignment to the template SOURCE, determine whether the value derives from user input or from a constant/safe source. Cite the data-flow chain."
+    - "Are there constant-time conditions or reassignments that override the user-tainted value on the reaching path? Quote them."
+    - "What specific defense, if any, prevents SSTI? Name it concretely — e.g. user input passed only as `render(ctx, name=user)` template variable (not template source), `jinja2.sandbox.SandboxedEnvironment`, allow-listed template file paths. Vague 'sandboxing' is not acceptable."
+    - "If you cannot point to user-controlled data reaching the template SOURCE with concrete line numbers AND identify the absence of every defense above, verdict False Positive."
   context_hint: "Include template engine initialization and where user input enters the template."
   additional_context: ["caller"]
+  min_iterations: 2
 
 py/header-injection:
   short_description: "HTTP response header value built from user-controlled input"
   questions:
-    - "Where does the HEADER VALUE originate — request parameter, cookie, form field?"
-    - "Is the value set in a response header (e.g., response.headers['Location'] = user_input) without validation?"
-    - "Could an attacker inject \\r\\n (CRLF) sequences to inject additional headers or split the response?"
-    - "Is the header a Location redirect — if so, is the value validated against an allowlist of allowed hosts?"
-    - "What is the security impact — cache poisoning, open redirect, XSS via injected Content-Type?"
-    - "Would stripping \\r, \\n, and %0d, %0a from values before setting headers prevent this?"
+    - "Quote the EXACT header-setting sink (`response.headers[...] = ...`, `set_cookie(...)`, `redirect(url)`, `make_response(...)` with header arg, line N) and name the value assigned."
+    - "List EVERY assignment to that value on each path that reaches the sink, with line numbers. Identify the LAST assignment on each path."
+    - "For each LAST assignment, determine whether the value derives from user input or from a constant/safe source. Cite the data-flow chain."
+    - "Are there constant-time conditions or reassignments that override the user-tainted value on the reaching path? Quote them."
+    - "What specific defense, if any, neutralises CRLF / header-split? Name it concretely — e.g. modern frameworks (Flask/Django) strip `\\r\\n` automatically in `response.headers.__setitem__`, explicit `value.replace('\\r','').replace('\\n','')`, redirect URL validated against `urlparse(url).netloc in ALLOWED_HOSTS`. Vague 'sanitisation' is not acceptable."
+    - "If you cannot point to user-controlled data reaching the sink with concrete line numbers AND identify the absence of every defense above (including framework-level CRLF stripping), verdict False Positive."
   context_hint: "Include the header assignment and source of the header value."
   additional_context: ["caller"]
+  min_iterations: 2
+
+py/tainted-format-string:
+  short_description: "User input used as a format-string template (CWE-134)"
+  questions:
+    - "Quote the EXACT format-string sink (`format()` / `.format()` / `%` operator on str / `f-string` / `printf`-style logging via `logging.warning('%s', ...)`-style call with tainted format arg, line N) and name the format-string value."
+    - "List EVERY assignment to the format-string value on each path that reaches the sink, with line numbers. Identify the LAST assignment on each path."
+    - "For each LAST assignment, determine whether the value derives from user input or from a constant/safe source. Cite the data-flow chain."
+    - "Are there constant-time conditions or reassignments that override the user-tainted value on the reaching path? Quote them."
+    - "Critical distinction: is user input the FORMAT STRING (vulnerable — `'{}'.format(args)` where `'{}'` is user-controlled) or an ARGUMENT to a constant format string (safe — `'%s' % user`)? The latter is not a CWE-134 even if user input is involved."
+    - "If you cannot demonstrate that user-controlled data IS the format string itself with concrete line numbers, verdict False Positive."
+  context_hint: "Include the format-string assignment and how it is consumed."
+  additional_context: ["caller"]
+  min_iterations: 2
 
 # ==============================================================================
 # Python - Web Security (CSRF, Open Redirect, Cookie, ReDoS)

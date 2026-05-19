@@ -35,6 +35,40 @@ _GENERIC_PATTERN_MARKERS = (
     "is a clear",
 )
 
+# Languages whose taint-tracking findings tend to live in web-framework
+# code where OWASP-style FP traps neutralise the taint (apostrophe
+# guards, parameterised XPath, secure_filename, list/map reassignment).
+# C-side findings don't share this pattern; gating the new
+# second-opinion arm by language keeps the diversevul/CWE-264 results
+# stable. See benchmarks/results/20260519_020920.
+_FRAMEWORK_LANGS: frozenset[str] = frozenset({
+    "python", "javascript", "java", "php", "go",
+})
+
+# Taint-tracking CWEs that need a forced flow-trace pass on framework
+# languages. The 2026-05-19 owasp-python benchmark documented a 38pp
+# accuracy gap between 1-iter and 2-iter verdicts on this class.
+_TAINT_CWES: frozenset[str] = frozenset({
+    "CWE-22",   # Path traversal
+    "CWE-77",   # Command injection (generic)
+    "CWE-78",   # OS command injection
+    "CWE-79",   # XSS
+    "CWE-80",   # Basic XSS
+    "CWE-87",   # Alternate XSS syntax
+    "CWE-89",   # SQL injection
+    "CWE-90",   # LDAP injection
+    "CWE-94",   # Code injection
+    "CWE-95",   # Eval injection
+    "CWE-113",  # Header injection
+    "CWE-134",  # Uncontrolled format string
+    "CWE-502",  # Deserialisation of untrusted data
+    "CWE-611",  # XXE
+    "CWE-643",  # XPath injection
+    "CWE-917",  # SSTI
+    "CWE-918",  # SSRF
+    "CWE-1333", # ReDoS
+})
+
 
 def _downgrade_unsupported_confidence(verdict: Verdict) -> Verdict:
     """Demote High/Medium → Low when a TP or FP verdict lacks specific citations.
@@ -559,20 +593,37 @@ class VerificationEngine:
         # (the voting already provides redundancy) and when the verdict came
         # from a parse-failed fallback (no real opinion to challenge).
         sc_samples = getattr(self.config.verification, "self_consistency_samples", 1)
-        # Two trigger arms (either fires):
+        # Three trigger arms (any fires):
         #   A. Classic "1-iter / High-confidence FP" — the 2026-05-15 06:00
-        #      benchmark documented this as the dominant failure mode.
+        #      diversevul benchmark documented this as the dominant
+        #      under-recall failure mode.
         #   B. "Force-decision defaulted to FP" — the 2026-05-15 16:45
-        #      follow-up benchmark showed CWE-264 cases truncating the
-        #      verdict JSON, falling into _force_decision_turn, and
-        #      defaulting to FP. These end at iter=2/Low (so arm A misses
-        #      them) but the reasoning carries the "[Forced decision:"
-        #      sentinel, which is the cheapest detector.
+        #      follow-up showed CWE-264 cases truncating the verdict
+        #      JSON, falling into _force_decision_turn, and defaulting
+        #      to FP. These end at iter=2/Low (so arm A misses them) but
+        #      the reasoning carries the "[Forced decision:" sentinel.
+        #   C. "1-iter / High-confidence TP on framework taint CWE" —
+        #      the 2026-05-19 owasp-python benchmark showed Python web
+        #      taint-tracking findings sitting at 1-iter/High accuracy
+        #      = 57.1% vs 2-iter/High = 95.8%. The LLM was pattern-
+        #      matching "user input near sink" and shipping TP, missing
+        #      framework-defense FP traps (apostrophe guards,
+        #      parameterised XPath, secure_filename, list/map
+        #      reassignment). Gated to framework languages so C-side
+        #      verdicts are unchanged.
         reasoning_text = verdict.reasoning or ""
         is_fp = verdict.verdict in ("False Positive", "FP")
+        is_tp = verdict.verdict in ("True Positive", "TP")
         arm_a = is_fp and verdict.confidence == "High" and verdict.iterations == 1
         arm_b = is_fp and "[Forced decision:" in reasoning_text
-        if sc_samples <= 1 and (arm_a or arm_b):
+        arm_c = (
+            is_tp
+            and verdict.confidence == "High"
+            and verdict.iterations == 1
+            and finding.lang in _FRAMEWORK_LANGS
+            and bool(set(finding.cwe_ids or []) & _TAINT_CWES)
+        )
+        if sc_samples <= 1 and (arm_a or arm_b or arm_c):
             # Post-processing must never crash a verdict; the original
             # verdict is preserved if the second-opinion call fails.
             with contextlib.suppress(Exception):

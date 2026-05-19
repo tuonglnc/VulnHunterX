@@ -476,6 +476,12 @@ class ApproachMetrics:
                     "precision": _fmt(cm.precision),
                     "recall": _fmt(cm.recall),
                     "f1": _fmt(cm.f1),
+                    # SAST-FPs the approach failed to filter out
+                    # (counted as TP). Surfaced because per-CWE precision
+                    # can hide whether the residual error is "missed
+                    # one" or "missed all" on small buckets.
+                    "fp_missed": cm.fp_missed,
+                    "fp_total": cm.fp_caught + cm.fp_missed,
                 }
             )
         d["per_cwe"] = cwe_summary

@@ -431,8 +431,8 @@ def _iteration_calibration_table(summaries: list[dict]) -> str:
 
 def _cwe_table(summaries: list[dict]) -> str:
     """Build per-CWE breakdown table for all approaches."""
-    lines = ["| Approach | CWE | Total | Precision | Recall | F1 |",
-             "|---|---|---|---|---|---|"]
+    lines = ["| Approach | CWE | Total | Precision | Recall | F1 | FP→TP |",
+             "|---|---|---|---|---|---|---|"]
     for s in summaries:
         for cwe in s.get("per_cwe", []):
             cwe_label = _clean_cwe(cwe.get("cwe_id", ""))
@@ -441,19 +441,28 @@ def _cwe_table(summaries: list[dict]) -> str:
             # look like a real signal in the report (Tier 3A).
             if isinstance(total, int) and total < 10:
                 cwe_label = f"{cwe_label} *(n={total})*"
+            fp_missed = cwe.get("fp_missed")
+            fp_total = cwe.get("fp_total")
+            if isinstance(fp_total, int) and fp_total > 0:
+                fp_cell = f"{fp_missed}/{fp_total}"
+            else:
+                fp_cell = "—"
             lines.append(
                 f"| {s.get('approach','?')} | {cwe_label} "
                 f"| {total if total is not None else '?'} "
                 f"| {_pct(cwe.get('precision'))} "
                 f"| {_pct(cwe.get('recall'))} "
-                f"| {_pct(cwe.get('f1'))} |"
+                f"| {_pct(cwe.get('f1'))} "
+                f"| {fp_cell} |"
             )
     table = "\n".join(lines) if len(lines) > 2 else "_No per-CWE data._"
     explanation = (
         "> **How to read this table:** Each row shows metrics for one approach on one CWE vulnerability class. "
         "CWEs with low F1 across all approaches are intrinsically hard for SAST to detect "
         "(complex control flow, indirect data dependencies). "
-        "CWEs where vulnhunterx outperforms generic-questions show the benefit of rule-specific guided questions."
+        "CWEs where vulnhunterx outperforms generic-questions show the benefit of rule-specific guided questions. "
+        "**FP→TP** = SAST-FPs the approach failed to filter out (kept as TP) / total SAST-FPs for that CWE. "
+        "Lower numerator = better filtering. `—` means the dataset has no FP-labeled entries for this CWE."
     )
     return table + "\n\n" + explanation
 
