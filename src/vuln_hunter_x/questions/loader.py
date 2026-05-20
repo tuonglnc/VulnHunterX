@@ -67,7 +67,9 @@ _CWE_MIN_ITERATIONS_OVERRIDE: dict[str, tuple[int, frozenset[str]]] = {
     "CWE-95":   (2, _FRAMEWORK_LANGS),   # Eval injection
     "CWE-113":  (2, _FRAMEWORK_LANGS),   # HTTP header injection
     "CWE-134":  (2, _FRAMEWORK_LANGS),   # Uncontrolled format string
+    "CWE-501":  (2, _FRAMEWORK_LANGS),   # Trust boundary violation
     "CWE-502":  (2, _FRAMEWORK_LANGS),   # Deserialisation of untrusted data
+    "CWE-601":  (2, _FRAMEWORK_LANGS),   # URL redirection to untrusted site (open redirect)
     "CWE-611":  (2, _FRAMEWORK_LANGS),   # XML external entity (XXE)
     "CWE-643":  (2, _FRAMEWORK_LANGS),   # XPath injection
     "CWE-917":  (2, _FRAMEWORK_LANGS),   # Expression/template injection (SSTI)

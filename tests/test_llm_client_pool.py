@@ -120,3 +120,64 @@ class TestRotationOnRateLimit:
             kwargs = cloud_client._build_completion_kwargs([{"role": "user", "content": "x"}])
             with pytest.raises(litellm.RateLimitError):
                 cloud_client._completion(kwargs)
+
+
+def _quota_error() -> litellm.APIConnectionError:
+    # Mirrors the body Ollama Cloud returns when a per-account session
+    # quota is hit (see benchmarks/results/.../*_vulnhunterx_results.json).
+    return litellm.APIConnectionError(
+        message=(
+            'Ollama_chatException - {"error":"you (falregister) have reached '
+            'your session usage limit, upgrade for higher limits: '
+            'https://ollama.com/upgrade (ref: abc)"}'
+        ),
+        llm_provider="ollama",
+        model="qwen3-coder-next:cloud",
+    )
+
+
+class TestRotationOnQuota:
+    def test_quota_error_rotates_and_parks_key(self, cloud_client):
+        pool = cloud_client._ollama_pool
+        pool._cursor = 0  # noqa: SLF001
+
+        calls: list[str] = []
+
+        def fake_completion(**kwargs):
+            calls.append(kwargs["api_key"])
+            if kwargs["api_key"] == "k1":
+                raise _quota_error()
+            return _ok_response()
+
+        with patch.object(litellm, "completion", side_effect=fake_completion):
+            kwargs = cloud_client._build_completion_kwargs([{"role": "user", "content": "x"}])
+            assert kwargs["api_key"] == "k1"
+            resp = cloud_client._completion(kwargs)
+
+        assert resp.choices[0].message.content == '{"verdict": "TP"}'
+        assert calls[0] == "k1"
+        assert calls[1] in {"k2", "k3"}
+        # The exhausted key must stay parked for a long time, not seconds.
+        next_keys = {pool.acquire() for _ in range(6)}
+        assert "k1" not in next_keys
+
+    def test_non_quota_connection_error_propagates(self, cloud_client):
+        # A genuine network error must NOT burn a key — propagate immediately.
+        net_err = litellm.APIConnectionError(
+            message="Connection refused",
+            llm_provider="ollama",
+            model="qwen3-coder-next:cloud",
+        )
+
+        def always_fail(**_kwargs):
+            raise net_err
+
+        with patch.object(litellm, "completion", side_effect=always_fail):
+            kwargs = cloud_client._build_completion_kwargs([{"role": "user", "content": "x"}])
+            with pytest.raises(litellm.APIConnectionError):
+                cloud_client._completion(kwargs)
+
+        # No keys should have been parked.
+        pool = cloud_client._ollama_pool
+        seen = {pool.acquire() for _ in range(6)}
+        assert seen == {"k1", "k2", "k3"}

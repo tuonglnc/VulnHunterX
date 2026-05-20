@@ -59,26 +59,141 @@ def _num(val: float | int | None, decimals: int = 3) -> str:
     return f"{val:.{decimals}f}"
 
 
-def _load_results(run_dir: Path) -> list[dict]:
-    """Load all checkpoint JSON files from a run directory."""
-    summaries = []
-    summary_file = run_dir / "summary.json"
-    if summary_file.exists():
-        data = json.loads(summary_file.read_text())
-        return data.get("summary", [])
+_ERROR_CLASS_LABELS = {
+    "timeout": "litellm.Timeout",
+    "disconnect": "Server disconnected",
+    "server_5xx": "Provider 5xx",
+    "rate_limit": "Rate-limit / quota",
+    "auth": "Auth / credentials",
+    "other": "Other",
+}
 
-    # Fall back to reading individual checkpoints
+
+def _classify_llm_error(reasoning: str) -> str:
+    """Bucket a raw error `reasoning` string into a coarse transport-error class.
+
+    Strings come from `LLMClient` wrapping litellm exceptions, e.g.
+    ``"LLM call failed: litellm.APIConnectionError: Ollama_chatException - litellm.Timeout: ..."``.
+    """
+    if not reasoning:
+        return "other"
+    s = reasoning.lower()
+    if "timeout" in s or "timed out" in s:
+        return "timeout"
+    if "disconnect" in s:
+        return "disconnect"
+    if "rate" in s and "limit" in s:
+        return "rate_limit"
+    if "quota" in s:
+        return "rate_limit"
+    if "401" in s or "403" in s or "unauthorized" in s or "api key" in s:
+        return "auth"
+    if "500" in s or "502" in s or "503" in s or "504" in s or "internal server error" in s:
+        return "server_5xx"
+    return "other"
+
+
+def _load_error_rows(run_dir: Path) -> dict[tuple[str, str], list[dict]]:
+    """Collect ERROR-verdict rows from per-approach `*_results.json` files.
+
+    Keyed by ``(approach, dataset)`` so the failure section can render one
+    block per failing approach.
+    """
+    rows_by_key: dict[tuple[str, str], list[dict]] = {}
     for f in sorted(run_dir.glob("*_results.json")):
+        ck = _read_checkpoint(f)
+        if ck is None:
+            continue
+        approach = ck.get("approach") or "?"
+        dataset = ck.get("dataset") or "?"
+        for row in ck.get("results") or []:
+            if row.get("predicted_label") == "ERROR":
+                rows_by_key.setdefault((approach, dataset), []).append(row)
+    return rows_by_key
+
+
+def _load_results(run_dir: Path) -> list[dict]:
+    """Load all checkpoint JSON files from a run directory.
+
+    ``summary.json`` is preferred when its ``summary`` list is populated.
+    If the runner was killed before flipping individual checkpoints from
+    ``in_progress`` to ``completed`` but the summary's ``incomplete_runs``
+    block shows ``entries_done == entries_expected`` for them, the work
+    actually finished — we promote those files into the report rather than
+    silently dropping them.
+
+    Falling back to a plain file scan (no ``summary.json`` at all) keeps
+    pre-existing behavior: ``in_progress`` files are ignored.
+    """
+    summary_file = run_dir / "summary.json"
+    summary_data: dict = {}
+    stuck_files: set[str] = set()
+    if summary_file.exists():
         try:
-            data = json.loads(f.read_text())
+            summary_data = json.loads(summary_file.read_text())
         except (json.JSONDecodeError, OSError):
+            summary_data = {}
+        existing = summary_data.get("summary") or []
+        if existing:
+            # Promote stuck-but-finished checkpoints (status=in_progress yet
+            # entries_done==entries_expected) into the returned list. Skip
+            # those already present in ``summary``.
+            stuck_files = _stuck_complete_files(summary_data)
+            if not stuck_files:
+                return existing
+            merged = list(existing)
+            seen = {(s.get("approach"), s.get("dataset")) for s in existing}
+            for fname in stuck_files:
+                ck = _read_checkpoint(run_dir / fname)
+                if ck is None or "metrics" not in ck:
+                    continue
+                key = (ck.get("approach"), ck.get("dataset"))
+                if key in seen:
+                    continue
+                merged.append(ck["metrics"])
+                seen.add(key)
+            return merged
+        # summary.json is present but empty — fall through to per-file scan,
+        # but treat stuck-but-finished as completed.
+        stuck_files = _stuck_complete_files(summary_data)
+
+    summaries: list[dict] = []
+    for f in sorted(run_dir.glob("*_results.json")):
+        ck = _read_checkpoint(f)
+        if ck is None or "metrics" not in ck:
             continue
-        # Only include completed checkpoints; skip in-progress (resumed but not done)
-        if data.get("status", "completed") != "completed":
+        status = ck.get("status", "completed")
+        if status != "completed" and f.name not in stuck_files:
             continue
-        if "metrics" in data:
-            summaries.append(data["metrics"])
+        summaries.append(ck["metrics"])
     return summaries
+
+
+def _read_checkpoint(path: Path) -> dict | None:
+    try:
+        return json.loads(path.read_text())
+    except (json.JSONDecodeError, OSError):
+        return None
+
+
+def _stuck_complete_files(summary_data: dict) -> set[str]:
+    """Files the runner classified as in_progress but actually finished.
+
+    Returns the set of filenames in ``summary_data['incomplete_runs']``
+    where ``entries_done >= entries_expected > 0`` — i.e. all expected work
+    was done, the runner just didn't flip the status flag (typically
+    because it was killed before the final write).
+    """
+    stuck: set[str] = set()
+    for row in summary_data.get("incomplete_runs") or []:
+        if not isinstance(row, dict):
+            continue
+        fname = row.get("file")
+        done = row.get("entries_done") or 0
+        expected = row.get("entries_expected") or 0
+        if fname and expected > 0 and done >= expected:
+            stuck.add(fname)
+    return stuck
 
 
 def _load_run_meta(run_dir: Path) -> dict:
@@ -156,7 +271,10 @@ def _is_baseline(approach_name: str) -> bool:
         return approach_name == "raw-sast"
 
 
-def _key_findings(summaries: list[dict]) -> str:
+def _key_findings(
+    summaries: list[dict],
+    error_rows: dict[tuple[str, str], list[dict]] | None = None,
+) -> str:
     """Auto-generate a Key Findings prose section from the summary data."""
     if not summaries:
         return ""
@@ -214,10 +332,24 @@ def _key_findings(summaries: list[dict]) -> str:
         if api_err > 0:
             denom = s.get("total_processed") or 0
             pct = f"{(api_err / denom * 100):.1f}%" if denom else "?"
+            cause_blurb = "transport error"
+            if error_rows is not None:
+                rows = error_rows.get((s["approach"], s["dataset"])) or []
+                counts: dict[str, int] = {}
+                for r in rows:
+                    counts[_classify_llm_error(r.get("reasoning") or "")] = (
+                        counts.get(_classify_llm_error(r.get("reasoning") or ""), 0) + 1
+                    )
+                if counts:
+                    parts = [
+                        f"{n} {_ERROR_CLASS_LABELS.get(k, k)}"
+                        for k, n in sorted(counts.items(), key=lambda kv: -kv[1])
+                    ]
+                    cause_blurb = ", ".join(parts)
             bullets.append(
                 f"⚠️ **LLM API failures**: `{s['approach']}` on `{s['dataset']}` "
                 f"had {api_err} findings ({pct}) fail with an LLM API error "
-                f"(rate-limit / quota / network). These count as misses but are "
+                f"({cause_blurb}). These count as misses but are "
                 f"**not** model errors. Re-run the affected entries to get an "
                 f"honest picture; precision/recall above will rise as those "
                 f"resolve to real verdicts."
@@ -393,6 +525,108 @@ def _force_decision_table(summaries: list[dict]) -> str:
         "before completing verdicts. `% of Evaluated` >5% is a smell."
     )
     return "\n".join(lines) + "\n\n" + explanation
+
+
+def _llm_failures_section(
+    error_rows: dict[tuple[str, str], list[dict]],
+    summaries: list[dict],
+    max_rows: int = 25,
+) -> str:
+    """Render a per-finding listing of ERROR-verdict rows so operators can
+    re-run them without grepping the raw `*_results.json` checkpoint.
+
+    Returns an empty string when no approach has any ERROR rows.
+    """
+    if not any(error_rows.values()):
+        return ""
+
+    totals_by_key: dict[tuple[str, str], dict] = {
+        (s.get("approach"), s.get("dataset")): s for s in summaries
+    }
+
+    blocks: list[str] = []
+    for (approach, dataset), rows in error_rows.items():
+        if not rows:
+            continue
+        s = totals_by_key.get((approach, dataset)) or {}
+        denom = s.get("total_processed") or 0
+        pct = f"{(len(rows) / denom * 100):.1f}%" if denom else "?"
+
+        class_counts: dict[str, int] = {}
+        for r in rows:
+            cls = _classify_llm_error(r.get("reasoning") or "")
+            class_counts[cls] = class_counts.get(cls, 0) + 1
+        class_table = [
+            "| Error class | Count |",
+            "|---|---|",
+            *(
+                f"| {_ERROR_CLASS_LABELS.get(k, k)} | {n} |"
+                for k, n in sorted(class_counts.items(), key=lambda kv: -kv[1])
+            ),
+        ]
+
+        row_table = [
+            "| entry_id | rule_id | CWE | GT | iters | error |",
+            "|---|---|---|---|---|---|",
+        ]
+        for r in rows[:max_rows]:
+            err = (r.get("reasoning") or "").replace("|", "\\|").replace("\n", " ")
+            if len(err) > 80:
+                err = err[:77] + "…"
+            row_table.append(
+                f"| {r.get('entry_id','?')} "
+                f"| {r.get('rule_id','?')} "
+                f"| {_clean_cwe(r.get('cwe_id') or '')} "
+                f"| {r.get('ground_truth_label','?')} "
+                f"| {r.get('iterations','?')} "
+                f"| {err} |"
+            )
+        truncated = ""
+        if len(rows) > max_rows:
+            truncated = (
+                f"\n\n_…{len(rows) - max_rows} more in "
+                f"`{approach}` `{dataset}` checkpoint; see "
+                f"`failed_entries.txt`._"
+            )
+
+        blocks.append(
+            f"`{approach}` on `{dataset}` — {len(rows)} findings ({pct}) "
+            f"failed with a transport error. Re-run with "
+            f"`python benchmarks/scripts/run_benchmark.py --run-dir <run-dir> "
+            f"--resume --only-entries failed_entries.txt` to refine the "
+            f"metrics.\n\n"
+            + "\n".join(class_table)
+            + "\n\n"
+            + "\n".join(row_table)
+            + truncated
+        )
+
+    explanation = (
+        "> **How to read this section:** These rows had `predicted_label == "
+        "ERROR` — the LLM call never returned a verdict (timeout, disconnect, "
+        "5xx, etc.). They count as misses in precision/recall above but reflect "
+        "infrastructure, not model judgement. Re-running them will refine the "
+        "headline numbers."
+    )
+    return "\n\n".join(blocks) + "\n\n" + explanation
+
+
+def _write_failed_entries_file(
+    run_dir: Path,
+    error_rows: dict[tuple[str, str], list[dict]],
+) -> Path | None:
+    """Drop a plain-text list of failed entry_ids next to REPORT.md."""
+    entries = [
+        r.get("entry_id")
+        for rows in error_rows.values()
+        for r in rows
+        if r.get("entry_id")
+    ]
+    if not entries:
+        return None
+    path = run_dir / "failed_entries.txt"
+    path.write_text("\n".join(entries) + "\n", encoding="utf-8")
+    return path
 
 
 def _iteration_calibration_table(summaries: list[dict]) -> str:
@@ -949,6 +1183,12 @@ def generate_report(run_dir: Path, include_charts: bool = False) -> Path:
         logger.error("No benchmark results found in %s", run_dir)
         sys.exit(1)
 
+    error_rows = _load_error_rows(run_dir)
+    failed_file = _write_failed_entries_file(run_dir, error_rows)
+    if failed_file is not None:
+        logger.info("Failed entries written: %s", failed_file)
+    failures_section = _llm_failures_section(error_rows, summaries)
+
     chart_paths = _generate_charts(summaries, run_dir) if include_charts else []
 
     lines: list[str] = [
@@ -958,7 +1198,7 @@ def generate_report(run_dir: Path, include_charts: bool = False) -> Path:
         "",
         "---",
         "",
-        _key_findings(summaries),
+        _key_findings(summaries, error_rows),
         "",
         "---",
         "",
@@ -994,6 +1234,18 @@ def generate_report(run_dir: Path, include_charts: bool = False) -> Path:
                 "",
             ]
             if _force_decision_table(summaries)
+            else []
+        ),
+        *(
+            [
+                "---",
+                "",
+                "## LLM API Failures",
+                "",
+                failures_section,
+                "",
+            ]
+            if failures_section
             else []
         ),
         "---",

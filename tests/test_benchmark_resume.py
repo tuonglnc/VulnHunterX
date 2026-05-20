@@ -407,7 +407,218 @@ class TestGenerateReportCompat:
         # Only the completed checkpoint should appear
         approaches = [s.get("approach") for s in summaries]
         assert "vulnhunterx" in approaches
-        assert "generic-questions" not in approaches
+
+    def test_load_results_promotes_stuck_complete_runs(self, tmp_path: Path):
+        """When the runner was killed before flipping status but all entries
+        were processed, summary.json's incomplete_runs lists the files with
+        entries_done == entries_expected. _load_results should treat those
+        as completed and include their metrics in the report.
+        """
+        import json as _json
+
+        from benchmarks.scripts.generate_report import _load_results
+
+        results = _make_results(4)
+        metrics = evaluate(results, "vulnhunterx", "test_ds")
+        _save_checkpoint(
+            tmp_path, "test_ds", "vulnhunterx",
+            results, metrics, status="in_progress",
+        )
+
+        # Runner died after writing summary.json with the checkpoint listed
+        # as incomplete but entries_done == entries_expected.
+        ck_file = sorted(tmp_path.glob("*_results.json"))[0].name
+        (tmp_path / "summary.json").write_text(_json.dumps({
+            "run_dir": str(tmp_path),
+            "model": "test", "provider": "ollama",
+            "wall_seconds": 1.0, "approaches_run": [], "summary": [],
+            "incomplete_runs": [{
+                "file": ck_file,
+                "approach": "vulnhunterx",
+                "dataset": "test_ds",
+                "entries_done": 4,
+                "entries_expected": 4,
+            }],
+        }))
+
+        summaries = _load_results(tmp_path)
+        approaches = [s.get("approach") for s in summaries]
+        assert "vulnhunterx" in approaches
+
+    def test_load_results_does_not_promote_truly_incomplete_runs(self, tmp_path: Path):
+        """A run that the runner classified as incomplete AND where
+        entries_done < entries_expected must NOT be promoted."""
+        import json as _json
+
+        from benchmarks.scripts.generate_report import _load_results
+
+        results = _make_results(2)
+        metrics = evaluate(results, "vulnhunterx", "test_ds")
+        _save_checkpoint(
+            tmp_path, "test_ds", "vulnhunterx",
+            results, metrics, status="in_progress",
+        )
+
+        ck_file = sorted(tmp_path.glob("*_results.json"))[0].name
+        (tmp_path / "summary.json").write_text(_json.dumps({
+            "run_dir": str(tmp_path),
+            "model": "test", "provider": "ollama",
+            "wall_seconds": 1.0, "approaches_run": [], "summary": [],
+            "incomplete_runs": [{
+                "file": ck_file,
+                "approach": "vulnhunterx",
+                "dataset": "test_ds",
+                "entries_done": 2,
+                "entries_expected": 10,  # genuinely partial
+            }],
+        }))
+
+        summaries = _load_results(tmp_path)
+        assert summaries == []
+
+
+class TestOnlyEntriesFlag:
+    """`run_one(only_entries=...)` re-executes just the listed IDs and keeps
+    prior rows for everything else — used by `failed_entries.txt` re-runs."""
+
+    def _stub_approach(self):
+        from benchmarks.approaches.base import BenchmarkApproach, PRED_TP
+
+        class StubApproach(BenchmarkApproach):
+            name = "stub"
+            is_baseline = False
+            option_schema: dict = {}
+
+            def evaluate(self, entry):  # type: ignore[override]
+                return BenchmarkResult(
+                    entry=entry,
+                    predicted_label=PRED_TP,
+                    confidence="High",
+                    reasoning="re-run",
+                    elapsed_seconds=0.01,
+                    tokens_used=1,
+                    cost_usd=0.0,
+                    iterations=1,
+                )
+
+        return StubApproach()
+
+    def test_only_entries_replaces_error_rows_keeps_others(self, tmp_path: Path):
+        from benchmarks.approaches.base import PRED_ERROR
+        from benchmarks.scripts.run_benchmark import run_one
+
+        good = _make_results(3)  # entries e0..e2 with TP/FP verdicts
+        err_entry = _entry(LABEL_TP, i=99)
+        err_entry.id = "e99"
+        err_row = BenchmarkResult(
+            entry=err_entry, predicted_label=PRED_ERROR,
+            confidence="Low", reasoning="LLM call failed: litellm.Timeout",
+            elapsed_seconds=600.0, tokens_used=0, cost_usd=0.0, iterations=3,
+        )
+        all_rows = list(good) + [err_row]
+        metrics = evaluate(all_rows, "stub", "test_ds")
+        _save_checkpoint(
+            tmp_path, "test_ds", "stub",
+            all_rows, metrics, status="completed",
+        )
+
+        # Re-run only e99 — the rest must be kept from the checkpoint.
+        all_entries = [r.entry for r in all_rows]
+        result = run_one(
+            "test_ds", "stub", all_entries, self._stub_approach(),
+            tmp_path, "fp", resume=True,
+            only_entries={"e99"}, quiet=True,
+        )
+        assert result is not None
+        _, results = result
+        ids = {r.entry.id for r in results}
+        assert ids == {"e0", "e1", "e2", "e99"}
+        rerun = next(r for r in results if r.entry.id == "e99")
+        assert rerun.predicted_label != PRED_ERROR
+        assert rerun.reasoning == "re-run"
+
+
+class TestClassifyLlmError:
+    """`_classify_llm_error` bucketing for the LLM API Failures section."""
+
+    @pytest.mark.parametrize(
+        "reasoning, expected",
+        [
+            (
+                "LLM call failed: litellm.APIConnectionError: Ollama_chatException - "
+                "litellm.Timeout: Connection timed out after 600.0 seconds.",
+                "timeout",
+            ),
+            (
+                "LLM call failed: litellm.APIConnectionError: Ollama_chatException - "
+                "Server disconnected without sending a response.",
+                "disconnect",
+            ),
+            (
+                "LLM call failed: litellm.APIConnectionError: Ollama_chatException - "
+                '{"error":"Internal Server Error (ref: 52f52aa3-...)"}',
+                "server_5xx",
+            ),
+            ("HTTP 429: rate limit exceeded", "rate_limit"),
+            ("anthropic.AuthenticationError: invalid API key", "auth"),
+            ("something exploded", "other"),
+            ("", "other"),
+        ],
+    )
+    def test_classifies_observed_strings(self, reasoning: str, expected: str):
+        from benchmarks.scripts.generate_report import _classify_llm_error
+
+        assert _classify_llm_error(reasoning) == expected
+
+
+class TestLlmFailuresSection:
+    def test_section_and_failed_entries_file_emitted(self, tmp_path: Path):
+        """End-to-end: a checkpoint containing ERROR rows produces a
+        `## LLM API Failures` section and a `failed_entries.txt` sidecar."""
+        from benchmarks.scripts.generate_report import generate_report
+
+        from benchmarks.approaches.base import PRED_ERROR
+
+        results = _make_results(2)
+        err_entry = _entry(LABEL_TP, i=99)
+        err_entry.id = "test_ds-error-1"
+        err_result = BenchmarkResult(
+            entry=err_entry,
+            predicted_label=PRED_ERROR,
+            confidence="Low",
+            reasoning="LLM call failed: litellm.Timeout: timed out after 600s",
+            elapsed_seconds=600.0,
+            tokens_used=0,
+            cost_usd=0.0,
+            iterations=3,
+        )
+        results = list(results) + [err_result]
+        metrics = evaluate(results, "vulnhunterx", "test_ds")
+        _save_checkpoint(
+            tmp_path, "test_ds", "vulnhunterx",
+            results, metrics, status="completed",
+        )
+
+        generate_report(tmp_path, include_charts=False)
+        body = (tmp_path / "REPORT.md").read_text()
+        assert "## LLM API Failures" in body
+        assert "test_ds-error-1" in body
+        failed = (tmp_path / "failed_entries.txt").read_text()
+        assert "test_ds-error-1" in failed
+
+    def test_no_section_when_no_errors(self, tmp_path: Path):
+        from benchmarks.scripts.generate_report import generate_report
+
+        results = _make_results(3)
+        metrics = evaluate(results, "vulnhunterx", "test_ds")
+        _save_checkpoint(
+            tmp_path, "test_ds", "vulnhunterx",
+            results, metrics, status="completed",
+        )
+        generate_report(tmp_path, include_charts=False)
+        body = (tmp_path / "REPORT.md").read_text()
+        assert "## LLM API Failures" not in body
+        assert not (tmp_path / "failed_entries.txt").exists()
 
 
 # ── Tests: ProgressDisplay format ─────────────────────────────────────────────

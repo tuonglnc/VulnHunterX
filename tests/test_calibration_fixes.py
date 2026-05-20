@@ -258,6 +258,23 @@ class TestPythonTaintMinIterations:
         )
         assert q.min_iterations == 2
 
+    def test_python_cwe_601_bumps_min_iterations(self):
+        # 2026-05-19 owasp-python: py/url-redirection (CWE-601) had P=0.40 vs
+        # raw 0.50; was missing from the override map, defaulted to 1 iter.
+        q = self.loader.get_questions(
+            "py/path-injection", cwe_ids=["CWE-601"], lang="python",
+        )
+        assert q.min_iterations == 2
+
+    def test_python_cwe_501_bumps_min_iterations(self):
+        # 2026-05-19 owasp-python/java: trust-boundary-violation (CWE-501)
+        # had P=0.40 — needs the two-iteration floor for the downstream-read
+        # chain in the new sink-quote rubric.
+        q = self.loader.get_questions(
+            "py/path-injection", cwe_ids=["CWE-501"], lang="python",
+        )
+        assert q.min_iterations == 2
+
     def test_access_control_cwe_still_unconditional(self):
         # Access-control CWEs apply across all languages — they have an
         # empty langs frozenset meaning "all".

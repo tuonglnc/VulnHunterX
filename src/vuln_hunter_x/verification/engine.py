@@ -205,6 +205,7 @@ class VerificationEngine:
             max_tokens=config.llm.max_tokens,
             num_retries=config.llm.num_retries,
             ollama_api_keys=config.llm.ollama_api_keys,
+            ollama_key_state_path=config.paths.output_dir / ".ollama_key_state.json",
         )
 
         # Wire CWE → question mapping if rule_categories.yaml is available

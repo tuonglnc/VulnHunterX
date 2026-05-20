@@ -485,10 +485,15 @@ def run_one(
     quiet: bool = False,
     jobs: int = 1,
     llm_concurrency: int = 0,
+    only_entries: set[str] | None = None,
 ) -> tuple[ApproachMetrics, list[BenchmarkResult]] | None:
     """Evaluate one (dataset, approach) pair with incremental checkpointing.
 
     Returns (metrics, all_results) or None when the pair was skipped.
+
+    When ``only_entries`` is set, restrict execution to those entry IDs and
+    drop any prior checkpoint rows for them so they are re-run from scratch
+    (used by `failed_entries.txt` re-runs).
     """
     prior_results: list[BenchmarkResult] = []
     processed_ids: set[str] = set()
@@ -496,8 +501,14 @@ def run_one(
     checkpoint_data = _load_checkpoint(run_dir, dataset_name, approach_name)
     if checkpoint_data is not None:
         ck_status, processed_ids, prior_results = checkpoint_data
+        if only_entries:
+            # Re-run only the listed IDs: drop their stale rows so they
+            # get re-executed even if the checkpoint marked the pair as
+            # completed (typical case: ERROR rows from a transport blip).
+            prior_results = [r for r in prior_results if r.entry.id not in only_entries]
+            processed_ids = {r.entry.id for r in prior_results}
         if resume:
-            if ck_status == "completed":
+            if ck_status == "completed" and not only_entries:
                 logger.info("SKIP (completed): %s × %s", dataset_name, approach_name)
                 return None
             # in_progress: resume from where we left off
@@ -522,6 +533,23 @@ def run_one(
             )
             prior_results = []
             processed_ids = set()
+
+    if only_entries:
+        before = len(entries)
+        entries = [e for e in entries if e.id in only_entries]
+        missing = only_entries - {e.id for e in entries} - processed_ids
+        if missing:
+            logger.warning(
+                "--only-entries listed %d ID(s) not present in dataset %s: %s",
+                len(missing), dataset_name, ", ".join(sorted(missing)[:5]),
+            )
+        logger.info(
+            "--only-entries: %s × %s — running %d of %d dataset entries",
+            approach_name, dataset_name, len(entries), before,
+        )
+        if not entries:
+            logger.info("Nothing to do for %s × %s after --only-entries filter", dataset_name, approach_name)
+            return None
 
     logger.info(
         "Running %s × %s on %d entries …",
@@ -837,6 +865,19 @@ def main() -> int:
         ),
     )
     parser.add_argument(
+        "--only-entries",
+        type=Path,
+        default=None,
+        metavar="PATH",
+        help=(
+            "Re-run only the entry IDs listed in PATH (one ID per line, "
+            "blank lines and `#` comments ignored). Existing checkpoint rows "
+            "for those IDs are dropped and re-executed; other rows are kept. "
+            "Typically used with the `failed_entries.txt` emitted alongside "
+            "REPORT.md to retry LLM API failures."
+        ),
+    )
+    parser.add_argument(
         "--run-dir",
         type=Path,
         default=None,
@@ -1006,6 +1047,32 @@ def main() -> int:
             file=sys.stderr,
         )
         return 2
+
+    # --only-entries: load the ID list once. Resolve relative paths against
+    # run_dir so the typical workflow (re-run failed_entries.txt sitting next
+    # to the checkpoint) works without an absolute path.
+    only_entries_set: set[str] | None = None
+    if args.only_entries is not None:
+        only_path = args.only_entries
+        if not only_path.is_absolute() and not only_path.exists():
+            candidate = run_dir / only_path
+            if candidate.exists():
+                only_path = candidate
+        if not only_path.exists():
+            print(f"error: --only-entries file not found: {only_path}", file=sys.stderr)
+            return 2
+        only_entries_set = {
+            line.strip()
+            for line in only_path.read_text(encoding="utf-8").splitlines()
+            if line.strip() and not line.strip().startswith("#")
+        }
+        if not only_entries_set:
+            print(f"error: --only-entries file is empty: {only_path}", file=sys.stderr)
+            return 2
+        print(
+            f"--only-entries: restricting to {len(only_entries_set)} entry ID(s) from {only_path}",
+            file=sys.stderr,
+        )
     _setup_logging(run_dir)
     logger.info("Run directory: %s", run_dir)
 
@@ -1193,6 +1260,7 @@ def main() -> int:
                         quiet=args.quiet,
                         jobs=args.jobs,
                         llm_concurrency=args.llm_concurrency,
+                        only_entries=only_entries_set,
                     )
                     if result is not None:
                         metrics, results = result

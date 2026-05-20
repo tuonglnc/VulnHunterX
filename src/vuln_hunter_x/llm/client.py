@@ -74,6 +74,7 @@ class LLMClient:
         max_tokens: int = DEFAULT_LLM_MAX_TOKENS,
         num_retries: int = 5,
         ollama_api_keys: list[str] | None = None,
+        ollama_key_state_path: str | os.PathLike[str] | None = None,
     ):
         """Initialize the LLM client.
 
@@ -135,7 +136,20 @@ class LLMClient:
             and ollama_api_keys
             and len(ollama_api_keys) >= 2
         ):
-            self._ollama_pool = KeyPool(ollama_api_keys)
+            self._ollama_pool = KeyPool(ollama_api_keys, state_path=ollama_key_state_path)
+            status = self._ollama_pool.status()
+            cooling = [(tail, secs) for tail, secs in status if secs > 0]
+            logger.info(
+                "Ollama Cloud key pool: %d key(s) [%s]%s",
+                len(status),
+                ", ".join(f"…{tail}" for tail, _ in status),
+                (
+                    f"; {len(cooling)} cooling from prior runs: "
+                    + ", ".join(f"…{t} ({int(s)}s)" for t, s in cooling)
+                    if cooling
+                    else ""
+                ),
+            )
 
     def _build_completion_kwargs(
         self,
@@ -187,15 +201,36 @@ class LLMClient:
         )
         return kwargs
 
+    # Ollama Cloud surfaces per-account *quota* exhaustion (not per-second
+    # RPM) as APIConnectionError with one of these phrases in the body. RPM
+    # rate-limits come through as RateLimitError and are handled separately.
+    _OLLAMA_QUOTA_MARKERS = (
+        "session usage limit",
+        "upgrade for higher limits",
+        "daily usage limit",
+        "monthly usage limit",
+    )
+    # Daily-ish quotas don't reset in seconds — park the key long enough that
+    # we don't keep retrying it within the same run.
+    _OLLAMA_QUOTA_COOLDOWN_S = 6 * 3600
+
+    @classmethod
+    def _is_ollama_quota_error(cls, exc: Exception) -> bool:
+        msg = str(exc).lower()
+        return any(marker in msg for marker in cls._OLLAMA_QUOTA_MARKERS)
+
     def _completion(self, kwargs: dict) -> Any:
-        """Call ``litellm.completion``, rotating keys on 429 when a pool is active.
+        """Call ``litellm.completion``, rotating keys on 429/quota when a pool is active.
 
         Without a pool this is a pass-through and LiteLLM's own retry layer
         (``num_retries``, exponential backoff) handles transient errors.
         With a pool, LiteLLM retries are disabled in
         ``_build_completion_kwargs`` and we rotate to a fresh key after each
-        ``RateLimitError``, parking the offending key for the duration
-        indicated by ``Retry-After`` (60s fallback).
+        ``RateLimitError`` (parked for ``Retry-After``, 60s fallback) or
+        Ollama Cloud per-account quota exhaustion surfaced as
+        ``APIConnectionError`` (parked for several hours since quota resets
+        don't happen in seconds). Other ``APIConnectionError``s are genuine
+        network failures and propagate untouched.
         """
         if self._ollama_pool is None:
             return litellm.completion(**kwargs)
@@ -210,9 +245,25 @@ class LLMClient:
                 if key:
                     self._ollama_pool.cooldown(key, extract_retry_after(exc))
                 last_err = exc
-                next_key = self._ollama_pool.acquire()
-                if next_key:
-                    kwargs["api_key"] = next_key
+            except litellm.APIConnectionError as exc:
+                if not self._is_ollama_quota_error(exc):
+                    raise
+                key = kwargs.get("api_key")
+                if key:
+                    # cooldown() returns True only for the first parker — dedups
+                    # warnings when concurrent workers both held the same key.
+                    fresh = self._ollama_pool.cooldown(key, self._OLLAMA_QUOTA_COOLDOWN_S)
+                    if fresh:
+                        logger.warning(
+                            "Ollama Cloud quota exhausted on key ending …%s; "
+                            "parking for %ds and rotating.",
+                            key[-4:],
+                            int(self._OLLAMA_QUOTA_COOLDOWN_S),
+                        )
+                last_err = exc
+            next_key = self._ollama_pool.acquire()
+            if next_key:
+                kwargs["api_key"] = next_key
         assert last_err is not None
         raise last_err
 

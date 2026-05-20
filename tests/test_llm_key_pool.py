@@ -80,6 +80,70 @@ class TestCooldown:
         for _ in range(3):
             assert pool.acquire() == "b"
 
+    def test_cooldown_returns_true_only_on_first_park(self):
+        # Dedups concurrent-failure warnings: two workers holding the same
+        # key both call cooldown(); only the first should be considered a
+        # fresh park.
+        pool = KeyPool(["a", "b"])
+        assert pool.cooldown("a", 60) is True
+        assert pool.cooldown("a", 60) is False
+        # Unknown key returns False (no transition happened).
+        assert pool.cooldown("zzz", 60) is False
+
+
+class TestPersistence:
+    def test_cooldowns_survive_across_pool_instances(self, tmp_path):
+        state = tmp_path / "key_state.json"
+
+        pool1 = KeyPool(["a", "b", "c"], state_path=state)
+        pool1.cooldown("a", 3600)
+        # Sanity: in pool1, "a" is skipped.
+        assert pool1.acquire() in {"b", "c"}
+        assert state.is_file()
+
+        # New pool with the same state file — "a" must still be parked.
+        pool2 = KeyPool(["a", "b", "c"], state_path=state)
+        seen = {pool2.acquire() for _ in range(6)}
+        assert "a" not in seen
+        assert seen == {"b", "c"}
+
+    def test_expired_cooldowns_are_not_restored(self, tmp_path):
+        state = tmp_path / "key_state.json"
+        import json
+        import time as _time
+
+        # Write a state file where "a" was parked but the deadline has already passed.
+        state.write_text(
+            json.dumps(
+                {
+                    # SHA-256 of "a"
+                    "ca978112ca1bbdcafac231b39a23dc4da786eff8147c4e72b9807785afee48bb": (
+                        _time.time() - 100
+                    ),
+                }
+            )
+        )
+        pool = KeyPool(["a", "b"], state_path=state)
+        # "a" should be acquirable since the cooldown has expired.
+        seen = {pool.acquire() for _ in range(4)}
+        assert seen == {"a", "b"}
+
+    def test_missing_state_file_is_fine(self, tmp_path):
+        state = tmp_path / "does-not-exist.json"
+        pool = KeyPool(["a"], state_path=state)
+        assert pool.acquire() == "a"
+        # Trigger a save and verify the file lands on disk.
+        pool.cooldown("a", 30)
+        assert state.is_file()
+
+    def test_state_file_uses_hashes_not_raw_keys(self, tmp_path):
+        state = tmp_path / "key_state.json"
+        pool = KeyPool(["supersecret-key-value"], state_path=state)
+        pool.cooldown("supersecret-key-value", 60)
+        # The raw key must NOT appear in the state file — only its hash.
+        content = state.read_text()
+        assert "supersecret-key-value" not in content
+
 
 class TestThreadSafety:
     def test_concurrent_acquire_distributes_evenly(self):
