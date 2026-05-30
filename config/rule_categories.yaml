@@ -468,3 +468,6 @@ cwe_question_map:
 
   # Data exposure
   CWE-922:  "sensitive-data-exposure"
+
+  # Server-Side Template Injection (precise CWE for SSTI; CWE-917 also maps here)
+  CWE-1336: "template-injection"
