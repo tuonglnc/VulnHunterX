@@ -1,18 +1,28 @@
 # SPDX-License-Identifier: MIT
 # Copyright (c) 2026 VinSOC Cyber
 
-"""Ablation study approach: compare rule-specific vs generic vs zero-shot questions.
+"""Ablation study: isolate the contribution of guided questions.
 
-Runs the same finding through three question variants to isolate the contribution
-of guided questions to accuracy:
+The ablation holds the entire VulnHunterX pipeline constant (identical engine,
+context extractor, SnippetContextProvider, and config as the ``vulnhunterx``
+approach) and varies **only** the guided-question set:
 
-  Variant A (vulnhunterx)  — rule-specific questions from *_questions.yaml
-  Variant B (generic)      — only default_questions.yaml (generic fallback)
-  Variant C (zero-shot)    — no guided questions at all
+  specific  — rule-specific questions from *_questions.yaml
+  generic   — only default_questions.yaml (generic fallback)
+  zero      — no guided questions at all
 
-Each variant produces its own BenchmarkResult. The ablation approach registers
-all three under the names "ablation-specific", "ablation-generic", "ablation-zero"
-so they appear as separate rows in the benchmark report.
+Because the *specific* arm is, by construction, identical to the ``vulnhunterx``
+approach, it is NOT re-run here: the runner reuses the ``vulnhunterx`` result as
+the specific arm (see the ``ablation`` alias expansion in run_benchmark.py).
+This module therefore only provides the two *delta* arms as first-class,
+independently checkpointable approaches:
+
+  - ``ablation-generic``
+  - ``ablation-zero``
+
+Running ``--approach ablation`` expands to ``vulnhunterx`` (specific) +
+``ablation-generic`` + ``ablation-zero`` — the full three-way comparison with
+no duplicate LLM pass.
 
 Usage:
     python benchmarks/scripts/run_benchmark.py \\
@@ -23,10 +33,10 @@ from __future__ import annotations
 
 import time
 from pathlib import Path
-from typing import Any
+from typing import Any, ClassVar
 
 from benchmarks.adapters.ground_truth import GroundTruthEntry
-from benchmarks.adapters.registry import OptionSpec
+from benchmarks.adapters.registry import OptionSpec, _to_bool
 from benchmarks.approaches.base import (
     BenchmarkResult,
     _dry_run_result,
@@ -39,6 +49,7 @@ from benchmarks.approaches.registry import (
     RegisteredApproach,
     register_approach,
 )
+from vuln_hunter_x.context.snippet_provider import SnippetContextProvider
 from vuln_hunter_x.core.config import Config
 from vuln_hunter_x.core.types import GuidedQuestions
 from vuln_hunter_x.questions.loader import QuestionsLoader
@@ -49,41 +60,62 @@ _PROMPTS_DIR = Path(__file__).resolve().parents[2] / "config" / "prompts"
 _DEFAULT_QUESTIONS_FILE = _PROMPTS_DIR / "default_questions.yaml"
 
 
-@register_approach
-class AblationApproach(RegisteredApproach):
-    """Runs each finding through three question variants and returns all three results.
+class _ZeroShotLoader(QuestionsLoader):
+    """A QuestionsLoader that always returns an empty question list (zero-shot)."""
 
-    Because BenchmarkApproach.evaluate() returns a single BenchmarkResult, this
-    class exposes evaluate_all() which returns a list of three results.  The
-    evaluate() method returns only the vulnhunterx (Variant A) result for
-    compatibility with the standard benchmark runner loop.
+    def __init__(self) -> None:
+        super().__init__(prompts_dir=None)
 
-    To capture all three variants, call evaluate_all() directly or use
-    run_benchmark.py with --approach ablation (which calls evaluate_all via the
-    ablation-aware branch in the runner).
+    def get_questions(self, rule_id: str) -> GuidedQuestions:
+        return GuidedQuestions(
+            rule_id=rule_id,
+            short_description="",
+            questions=[],
+            context_hint="",
+            additional_context=[],
+        )
+
+    def get_questions_with_match_info(self, rule_id: str) -> tuple[GuidedQuestions, str]:
+        return self.get_questions(rule_id), "generic"
+
+
+class _AblationVariant(RegisteredApproach):
+    """One ablation arm: the vulnhunterx pipeline with a swapped question set.
+
+    Subclasses set ``name`` and ``variant`` ("generic" | "zero"). The engine
+    wiring mirrors ``VulnHunterXApproach.evaluate`` exactly so the *only*
+    independent variable across arms is the guided-question loader.
     """
 
-    name = "ablation"
-    requires_llm = True
-    is_baseline = False
-    option_schema = {
-        "max_iterations": OptionSpec(
-            int,
-            default=3,
-            help="Max LLM turns per finding (applied to each ablation variant).",
+    requires_llm: ClassVar[bool] = True
+    is_baseline: ClassVar[bool] = False
+    variant: ClassVar[str] = ""  # "generic" | "zero" — override in subclass
+    option_schema: ClassVar[dict[str, OptionSpec]] = {
+        "max_iterations": OptionSpec(int, default=3, help="Max LLM turns per finding."),
+        "force_decision": OptionSpec(
+            _to_bool,
+            default=True,
+            help="If True, force a TP/FP verdict after max_iterations (no NMD).",
+        ),
+        "use_slicing": OptionSpec(
+            _to_bool,
+            default=False,
+            help="Use variable-aware code slicing instead of full snippet.",
         ),
     }
 
     @classmethod
     def from_options(
         cls, llm: LLMConfig | None, options: dict[str, Any]
-    ) -> AblationApproach:
+    ) -> _AblationVariant:
         llm = llm or LLMConfig()
         return cls(
             provider=llm.provider,
             model=llm.model,
             dry_run=llm.dry_run,
             max_iterations=options.get("max_iterations", 3),
+            force_decision=options.get("force_decision", True),
+            use_slicing=options.get("use_slicing", False),
         )
 
     def __init__(
@@ -92,57 +124,60 @@ class AblationApproach(RegisteredApproach):
         model: str = "gpt-4o",
         max_iterations: int = 3,
         dry_run: bool = False,
+        force_decision: bool = True,
+        use_slicing: bool = False,
     ) -> None:
         self._provider = provider
         self._model = model
         self._max_iterations = max_iterations
         self._dry_run = dry_run
+        self._force_decision = force_decision
+        self._use_slicing = use_slicing
+        self._loader = self._build_loader()
 
-        # Variant A: full rule-specific questions
-        self._loader_specific = QuestionsLoader(prompts_dir=_PROMPTS_DIR)
+    def _build_loader(self) -> QuestionsLoader:
+        if self.variant == "generic":
+            loader = QuestionsLoader(prompts_dir=None)
+            if _DEFAULT_QUESTIONS_FILE.is_file():
+                loader.load_from_file(_DEFAULT_QUESTIONS_FILE)
+            return loader
+        if self.variant == "zero":
+            return _ZeroShotLoader()
+        raise ValueError(f"unknown ablation variant: {self.variant!r}")
 
-        # Variant B: only generic default questions
-        self._loader_generic = QuestionsLoader(prompts_dir=None)
-        if _DEFAULT_QUESTIONS_FILE.is_file():
-            self._loader_generic.load_from_file(_DEFAULT_QUESTIONS_FILE)
-
-        # Variant C: zero-shot (empty question list — loader returns programmatic fallback
-        # but we override to empty)
-        self._loader_zero = QuestionsLoader(prompts_dir=None)  # no questions loaded
-
-    def _make_config(self) -> Config:
-        return Config.from_dict({
-            "provider": self._provider,
-            "model": self._model,
-            "max_iterations": self._max_iterations,
-            "verbosity": "quiet",
-            "force_decision": True,
-        })
-
-    def _run_variant(
-        self,
-        entry: GroundTruthEntry,
-        loader: QuestionsLoader,
-        variant_name: str,
-        match_type_override: str = "",
-    ) -> BenchmarkResult:
-        finding = entry_to_finding(entry)
-
-        if match_type_override:
-            match_type = match_type_override
-        else:
-            _, match_type = loader.get_questions_with_match_info(finding.rule_id)
+    def evaluate(self, entry: GroundTruthEntry) -> BenchmarkResult:
+        if self._dry_run:
+            return _dry_run_result(entry, self.name)
 
         start = time.monotonic()
+        finding = entry_to_finding(entry)
+
+        config = Config.from_dict(
+            {
+                "provider": self._provider,
+                "model": self._model,
+                "max_iterations": self._max_iterations,
+                "verbosity": "quiet",
+                "force_decision": self._force_decision,
+            }
+        )
+        # Identical engine wiring to VulnHunterXApproach — only the questions
+        # loader differs, so any metric delta is attributable to the questions.
         engine = VerificationEngine(
-            config=self._make_config(),
-            questions_loader=loader,
+            config=config,
+            questions_loader=self._loader,
             context_extractor=_SnippetContextExtractor(
-                entry.code_snippet, entry.function_name
+                entry.code_snippet, entry.function_name,
+                use_slicing=self._use_slicing, finding=finding,
             ),
-            context_provider=None,
+            context_provider=SnippetContextProvider(
+                snippet=entry.code_snippet,
+                function_name=entry.function_name,
+            ),
+            jobs=1,
         )
 
+        _, match_type = self._loader.get_questions_with_match_info(finding.rule_id)
         result = engine.verify_findings([finding])
         elapsed = time.monotonic() - start
 
@@ -151,7 +186,7 @@ class AblationApproach(RegisteredApproach):
                 entry=entry,
                 predicted_label="ERROR",
                 confidence="",
-                reasoning=f"[{variant_name}] No verdict returned",
+                reasoning=f"[{self.name}] No verdict returned",
                 elapsed_seconds=elapsed,
                 question_match_type=match_type,
             )
@@ -173,56 +208,18 @@ class AblationApproach(RegisteredApproach):
             question_match_type=match_type,
         )
 
-    def evaluate(self, entry: GroundTruthEntry) -> BenchmarkResult:
-        """Standard evaluate() — returns only Variant A (rule-specific) result."""
-        if self._dry_run:
-            return _dry_run_result(entry, "ablation-specific")
-        return self._run_variant(entry, self._loader_specific, "ablation-specific")
 
-    def evaluate_all(self, entry: GroundTruthEntry) -> list[tuple[str, BenchmarkResult]]:
-        """Run all three variants and return list of (approach_name, result) tuples.
+@register_approach
+class AblationGenericApproach(_AblationVariant):
+    """Ablation arm — generic default questions only."""
 
-        Approach names: "ablation-specific", "ablation-generic", "ablation-zero"
-        """
-        if self._dry_run:
-            return [
-                ("ablation-specific", _dry_run_result(entry, "ablation-specific")),
-                ("ablation-generic", _dry_run_result(entry, "ablation-generic")),
-                ("ablation-zero", _dry_run_result(entry, "ablation-zero")),
-            ]
-
-        # Variant A — rule-specific questions
-        result_a = self._run_variant(entry, self._loader_specific, "ablation-specific")
-
-        # Variant B — generic default questions only
-        result_b = self._run_variant(entry, self._loader_generic, "ablation-generic", "default")
-
-        # Variant C — zero-shot: inject an empty question list by overriding the loader
-        # with a loader that returns a minimal GuidedQuestions (no questions)
-        zero_loader = _ZeroShotLoader()
-        result_c = self._run_variant(entry, zero_loader, "ablation-zero", "generic")
-
-        return [
-            ("ablation-specific", result_a),
-            ("ablation-generic", result_b),
-            ("ablation-zero", result_c),
-        ]
+    name = "ablation-generic"
+    variant = "generic"
 
 
-class _ZeroShotLoader(QuestionsLoader):
-    """A QuestionsLoader that always returns an empty question list (zero-shot)."""
+@register_approach
+class AblationZeroApproach(_AblationVariant):
+    """Ablation arm — zero-shot (no guided questions)."""
 
-    def __init__(self) -> None:
-        super().__init__(prompts_dir=None)
-
-    def get_questions(self, rule_id: str) -> GuidedQuestions:
-        return GuidedQuestions(
-            rule_id=rule_id,
-            short_description="",
-            questions=[],
-            context_hint="",
-            additional_context=[],
-        )
-
-    def get_questions_with_match_info(self, rule_id: str) -> tuple[GuidedQuestions, str]:
-        return self.get_questions(rule_id), "generic"
+    name = "ablation-zero"
+    variant = "zero"

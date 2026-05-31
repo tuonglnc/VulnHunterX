@@ -740,7 +740,11 @@ def main() -> int:
         nargs="+",
         default=["all"],
         metavar="APPROACH",
-        help=f"One or more of: {' '.join(_approach_names)} all",
+        help=(
+            f"One or more of: {' '.join(_approach_names)} all. "
+            "'ablation' expands to vulnhunterx + ablation-generic + ablation-zero "
+            "(the guided-question ablation; specific arm = vulnhunterx, not re-run)."
+        ),
     )
     parser.add_argument("--model", default=os.environ.get("LLM_MODEL", "gpt-4.1"))
     parser.add_argument("--provider", default=os.environ.get("LLM_PROVIDER", "openai"))
@@ -1013,6 +1017,20 @@ def main() -> int:
         if "all" in args.approach
         else list(dict.fromkeys(args.approach))
     )
+
+    # "ablation" is a meta-name for the guided-question ablation study: it holds
+    # the pipeline constant (identical to vulnhunterx) and varies only the
+    # guided questions. The "specific" arm IS vulnhunterx, so it is reused
+    # rather than re-run — expand to that trio (dedup preserves order and
+    # prevents a duplicate vulnhunterx pass if vulnhunterx was also requested).
+    if "ablation" in approaches:
+        expanded: list[str] = []
+        for a in approaches:
+            if a == "ablation":
+                expanded += ["vulnhunterx", "ablation-generic", "ablation-zero"]
+            else:
+                expanded.append(a)
+        approaches = list(dict.fromkeys(expanded))
 
     if args.iteration_sweep:
         approaches = ["vulnhunterx"]
