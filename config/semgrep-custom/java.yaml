@@ -367,3 +367,55 @@ rules:
           - pattern: $ENGINE.evaluate($CTX, $W, $TAG, $T)
       - pattern-not: Velocity.evaluate($CTX, $W, $TAG, "...")
       - pattern-not: $ENGINE.evaluate($CTX, $W, $TAG, "...")
+
+  # ── CWE-943: NoSQL injection — Spring Data query parsed from a dynamic string ──
+  - id: vulnhunterx.java.nosql-injection
+    languages: [java]
+    severity: ERROR
+    message: |
+      A MongoDB query is built from a non-literal string via BasicQuery /
+      Document.parse. Attacker-influenced JSON can inject query operators
+      ($where, $ne, $gt) to bypass filters or run server-side JS (CWE-943).
+      Build queries with the Criteria API and typed values, not string
+      concatenation.
+    metadata:
+      cwe: ["CWE-943"]
+      category: security
+      owasp: "A03:2021"
+      references:
+        - https://cwe.mitre.org/data/definitions/943.html
+    patterns:
+      - pattern-either:
+          - pattern: new BasicQuery($Q)
+          - pattern: Document.parse($Q)
+      - metavariable-pattern:
+          metavariable: $Q
+          patterns:
+            - pattern-not: '"..."'
+
+  # ── CWE-1333: Regex injection — request data compiled as a Pattern ──
+  - id: vulnhunterx.java.regex-injection
+    languages: [java]
+    severity: WARNING
+    mode: taint
+    message: |
+      Request data is compiled into a regular expression. An attacker can
+      supply a pattern with catastrophic backtracking (ReDoS) or alter match
+      semantics (CWE-1333). Use Pattern.quote() on user input or match
+      against a fixed, vetted pattern.
+    metadata:
+      cwe: ["CWE-1333"]
+      category: security
+      references:
+        - https://cwe.mitre.org/data/definitions/1333.html
+    pattern-sources:
+      - pattern: $REQ.getParameter(...)
+      - pattern: $REQ.getHeader(...)
+      - pattern: $REQ.getQueryString()
+    pattern-sanitizers:
+      - pattern: Pattern.quote(...)
+    pattern-sinks:
+      - pattern: Pattern.compile(...)
+      - patterns:
+          - pattern: $S.matches($RE)
+          - focus-metavariable: $RE

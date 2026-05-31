@@ -384,3 +384,80 @@ rules:
       - pattern: xmlquery.FindOne(...)
       - pattern: htmlquery.Find(...)
       - pattern: htmlquery.QueryAll(...)
+
+  # ── CWE-943: NoSQL injection — MongoDB $where operator in a query ──
+  - id: vulnhunterx.go.nosql-injection
+    languages: [go]
+    severity: ERROR
+    message: |
+      A MongoDB query is built with the $where operator. $where evaluates its
+      value as server-side JavaScript, so an attacker-influenced value yields
+      NoSQL injection with full JS expression power (CWE-943). Use native
+      query operators (bson.M{"field": bson.M{"$eq": v}}) instead of $where.
+    metadata:
+      cwe: ["CWE-943"]
+      category: security
+      owasp: "A03:2021"
+      references:
+        - https://cwe.mitre.org/data/definitions/943.html
+    patterns:
+      - pattern-either:
+          - pattern: 'bson.M{"$where": $X}'
+          - pattern: 'bson.M{..., "$where": $X, ...}'
+      - metavariable-pattern:
+          metavariable: $X
+          patterns:
+            - pattern-not: '"..."'
+
+  # ── CWE-1333: Regex injection — request data compiled as a regex pattern ──
+  - id: vulnhunterx.go.regex-injection
+    languages: [go]
+    severity: WARNING
+    mode: taint
+    message: |
+      Request data is compiled as a regular-expression pattern. An attacker
+      can craft a pattern with catastrophic backtracking (ReDoS) or alter the
+      match semantics (CWE-1333). Treat user input as a literal
+      (regexp.QuoteMeta) or match against a fixed, vetted pattern.
+    metadata:
+      cwe: ["CWE-1333"]
+      category: security
+      references:
+        - https://cwe.mitre.org/data/definitions/1333.html
+    pattern-sources:
+      - pattern: $R.URL.Query().Get(...)
+      - pattern: $R.FormValue(...)
+      - pattern: $R.PostFormValue(...)
+      - pattern: $R.Form.Get(...)
+    pattern-sanitizers:
+      - pattern: regexp.QuoteMeta(...)
+    pattern-sinks:
+      - pattern: regexp.Compile(...)
+      - pattern: regexp.CompilePOSIX(...)
+      - pattern: regexp.MustCompile(...)
+
+  # ── CWE-601: Open redirect — request data as the redirect target ──
+  - id: vulnhunterx.go.open-redirect
+    languages: [go]
+    severity: WARNING
+    mode: taint
+    message: |
+      The redirect target passed to http.Redirect is derived from request
+      data with no allowlist check. An attacker can redirect victims to an
+      external phishing/credential-theft site (CWE-601). Validate the target
+      against a fixed list of permitted destinations or force a relative path.
+    metadata:
+      cwe: ["CWE-601"]
+      category: security
+      owasp: "A01:2021"
+      references:
+        - https://cwe.mitre.org/data/definitions/601.html
+    pattern-sources:
+      - pattern: $R.URL.Query().Get(...)
+      - pattern: $R.FormValue(...)
+      - pattern: $R.PostFormValue(...)
+      - pattern: $R.Form.Get(...)
+    pattern-sinks:
+      - patterns:
+          - pattern: http.Redirect($W, $R, $URL, $CODE)
+          - focus-metavariable: $URL

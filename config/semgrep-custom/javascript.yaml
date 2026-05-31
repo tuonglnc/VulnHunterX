@@ -323,3 +323,53 @@ rules:
             - pattern-not: '"..."'
             - pattern-not: "'...'"
             - pattern-not: '`...`'
+
+  # ── CWE-1333: Regex injection — request data compiled as a RegExp ──
+  - id: vulnhunterx.js.regex-injection
+    languages: [javascript, typescript]
+    severity: WARNING
+    mode: taint
+    message: |
+      Request data is used to construct a RegExp. An attacker can supply a
+      pattern with catastrophic backtracking (ReDoS) that hangs the event
+      loop, or alter match semantics (CWE-1333). Escape the input or match
+      against a fixed, vetted pattern.
+    metadata:
+      cwe: ["CWE-1333"]
+      category: security
+      references:
+        - https://cwe.mitre.org/data/definitions/1333.html
+    pattern-sources:
+      - pattern: req.body.$X
+      - pattern: req.query.$X
+      - pattern: req.params.$X
+      - pattern: req.body[...]
+      - pattern: req.query[...]
+      - pattern: req.params[...]
+    pattern-sinks:
+      - pattern: new RegExp(...)
+      - pattern: RegExp(...)
+
+  # ── CWE-915: Mass assignment — ORM model built from full request body ──
+  - id: vulnhunterx.js.mass-assignment
+    languages: [javascript, typescript]
+    severity: ERROR
+    message: |
+      An ORM model is created/updated from the entire req.body. An attacker
+      can set fields that were never meant to be client-writable (role,
+      isAdmin, balance) — privilege escalation via mass assignment (CWE-915).
+      Pick an explicit allowlist of fields from req.body.
+    metadata:
+      cwe: ["CWE-915"]
+      category: security
+      owasp: "A08:2021"
+      references:
+        - https://cwe.mitre.org/data/definitions/915.html
+    patterns:
+      - pattern-either:
+          - pattern: $M.create(req.body)
+          - pattern: $M.create(req.body, ...)
+          - pattern: $M.update(req.body, ...)
+          - pattern: $M.findByIdAndUpdate($ID, req.body, ...)
+          - pattern: $M.findOneAndUpdate($Q, req.body, ...)
+          - pattern: new $M(req.body)

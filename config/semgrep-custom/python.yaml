@@ -552,3 +552,54 @@ rules:
           patterns:
             - pattern-not: '"..."'
             - pattern-not: "'...'"
+
+  # ── CWE-943: NoSQL injection — MongoDB $where with a non-literal value ──
+  - id: vulnhunterx.python.nosql-injection
+    languages: [python]
+    severity: ERROR
+    message: |
+      A MongoDB query uses the $where operator with a non-literal value. $where
+      evaluates the value as server-side JavaScript, so attacker-influenced
+      input yields NoSQL injection with full JS expression power (CWE-943).
+      Use native query operators ($eq, $in, $gt) instead of $where.
+    metadata:
+      cwe: ["CWE-943"]
+      category: security
+      owasp: "A03:2021"
+      references:
+        - https://cwe.mitre.org/data/definitions/943.html
+        - https://www.mongodb.com/docs/manual/reference/operator/query/where/
+    patterns:
+      - pattern-either:
+          - pattern: '$C.find({"$where": $X})'
+          - pattern: '$C.find({..., "$where": $X, ...})'
+          - pattern: '$C.find_one({"$where": $X})'
+          - pattern: '$C.find_one({..., "$where": $X, ...})'
+      - metavariable-pattern:
+          metavariable: $X
+          patterns:
+            - pattern-not: '"..."'
+            - pattern-not: "'...'"
+
+  # ── CWE-611: XXE — lxml parser with external entity resolution enabled ──
+  - id: vulnhunterx.python.xxe
+    languages: [python]
+    severity: ERROR
+    message: |
+      An lxml XMLParser is created with resolve_entities=True (or
+      no_network=False), which expands external entities — enabling XXE file
+      disclosure and SSRF when parsing untrusted XML (CWE-611). Use
+      resolve_entities=False and no_network=True, or parse with defusedxml.
+    metadata:
+      cwe: ["CWE-611"]
+      category: security
+      owasp: "A05:2021"
+      references:
+        - https://cwe.mitre.org/data/definitions/611.html
+        - https://github.com/tiran/defusedxml
+    patterns:
+      - pattern-either:
+          - pattern: etree.XMLParser(..., resolve_entities=True, ...)
+          - pattern: lxml.etree.XMLParser(..., resolve_entities=True, ...)
+          - pattern: etree.XMLParser(..., no_network=False, ...)
+          - pattern: lxml.etree.XMLParser(..., no_network=False, ...)
