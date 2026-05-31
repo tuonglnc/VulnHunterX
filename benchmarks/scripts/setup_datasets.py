@@ -27,6 +27,13 @@ _BENCHMARKS_DIR = Path(__file__).resolve().parents[1]
 DATASETS_DIR = _BENCHMARKS_DIR / "datasets"
 _MANIFEST_PATH = _BENCHMARKS_DIR / "datasets.yaml"
 
+# NIST SARD (and many CDNs) reject the default "Python-urllib/x.y" User-Agent
+# with HTTP 403 Forbidden. Send a browser-like UA so zip downloads succeed.
+_USER_AGENT = (
+    "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
+    "(KHTML, like Gecko) Chrome/124.0 Safari/537.36"
+)
+
 
 def _load_manifest() -> dict[str, dict]:
     """Load the install manifest from datasets.yaml and resolve target_dir.
@@ -58,6 +65,59 @@ def _git_clone(url: str, target: Path) -> None:
         subprocess.run(["git", "clone", "--depth=1", url, str(target)], check=True)
 
 
+def _ensure_gdown():  # type: ignore[no-untyped-def]
+    """Import gdown, installing it into the current venv if missing.
+
+    Prefers ``uv pip install`` because this project uses uv, whose venvs ship
+    without pip — so ``python -m pip install`` raises "No module named pip".
+    Falls back to pip, then ensurepip+pip, then a clear actionable error.
+    """
+    try:
+        import gdown  # type: ignore[import]
+
+        return gdown
+    except ImportError:
+        pass
+
+    logger.info("gdown not found, installing…")
+    import shutil as _shutil
+
+    commands: list[list[str]] = []
+    uv = _shutil.which("uv")
+    if uv:
+        commands.append([uv, "pip", "install", "--python", sys.executable, "--quiet", "gdown"])
+    commands.append([sys.executable, "-m", "pip", "install", "--quiet", "gdown"])
+
+    last_err: Exception | None = None
+    for cmd in commands:
+        try:
+            subprocess.run(cmd, check=True)
+            import gdown  # type: ignore[import]
+
+            return gdown
+        except (subprocess.CalledProcessError, FileNotFoundError, ImportError) as exc:
+            last_err = exc
+
+    # Last resort: bootstrap pip into the venv via ensurepip, then install.
+    try:
+        subprocess.run([sys.executable, "-m", "ensurepip", "--upgrade"], check=True)
+        subprocess.run(
+            [sys.executable, "-m", "pip", "install", "--quiet", "gdown"], check=True
+        )
+        import gdown  # type: ignore[import]
+
+        return gdown
+    except (subprocess.CalledProcessError, FileNotFoundError, ImportError) as exc:
+        last_err = exc
+
+    raise RuntimeError(
+        "Could not install 'gdown' automatically. Install it manually, then re-run:\n"
+        "  uv pip install gdown      (recommended — this project uses uv)\n"
+        "  pip install gdown\n"
+        f"(last error: {last_err})"
+    )
+
+
 def _download_gdrive(file_id: str, filename: str, target: Path) -> None:
     """Download a file from Google Drive using gdown."""
     out_path = target / filename
@@ -65,15 +125,7 @@ def _download_gdrive(file_id: str, filename: str, target: Path) -> None:
         logger.info("Already exists: %s", out_path)
         return
     target.mkdir(parents=True, exist_ok=True)
-    try:
-        import gdown  # type: ignore[import]
-    except ImportError:
-        logger.info("gdown not found, installing…")
-        subprocess.run(
-            [sys.executable, "-m", "pip", "install", "--quiet", "gdown"],
-            check=True,
-        )
-        import gdown  # type: ignore[import]
+    gdown = _ensure_gdown()
     logger.info("Downloading Google Drive file %s → %s", file_id, out_path)
     url = f"https://drive.google.com/uc?id={file_id}"
     gdown.download(url, str(out_path), quiet=False)
@@ -86,11 +138,17 @@ def _download_and_extract(url: str, target: Path) -> None:
     target.mkdir(parents=True, exist_ok=True)
     zip_path = target / "_download.zip"
     logger.info("Downloading %s …", url)
-    urllib.request.urlretrieve(url, zip_path)  # noqa: S310
-    logger.info("Extracting to %s …", target)
     import os
     import shutil
     import zipfile
+
+    # Use an explicit Request with a browser User-Agent (urlretrieve sends the
+    # default Python-urllib UA, which NIST SARD rejects with HTTP 403). urlopen
+    # follows redirects; stream to disk so large suites don't buffer in memory.
+    req = urllib.request.Request(url, headers={"User-Agent": _USER_AGENT})
+    with urllib.request.urlopen(req, timeout=120) as resp, zip_path.open("wb") as out:  # noqa: S310
+        shutil.copyfileobj(resp, out)
+    logger.info("Extracting to %s …", target)
     target_resolved = target.resolve()
     with zipfile.ZipFile(zip_path) as zf:
         for member in zf.infolist():
