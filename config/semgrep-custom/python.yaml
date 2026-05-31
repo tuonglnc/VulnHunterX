@@ -324,3 +324,282 @@ rules:
       - metavariable-regex:
           metavariable: $SECRET
           regex: '(?i).*(password|passwd|pwd|secret|api_key|apikey|token|access_key|private_key).*'
+
+  # ── CWE-434: Unrestricted file upload — saved under attacker filename ──
+  - id: vulnhunterx.python.file-upload
+    languages: [python]
+    severity: ERROR
+    message: |
+      A Werkzeug/Flask uploaded file is saved using its attacker-controlled
+      .filename without secure_filename() or an extension allowlist. The
+      attacker controls the path component and dangerous type — enabling
+      path traversal and web-shell upload (CWE-434). Wrap with
+      werkzeug.utils.secure_filename() and validate the extension.
+    metadata:
+      cwe: ["CWE-434"]
+      category: security
+      owasp: "A04:2021"
+      references:
+        - https://cwe.mitre.org/data/definitions/434.html
+        - https://flask.palletsprojects.com/en/latest/patterns/fileuploads/
+    patterns:
+      - pattern-either:
+          - pattern: $F.save($F.filename)
+          - pattern: $F.save($DIR + $F.filename)
+          - pattern: $F.save(os.path.join($DIR, $F.filename))
+          - pattern: |
+              $NAME = $F.filename
+              ...
+              $F.save(os.path.join($DIR, $NAME))
+      - pattern-not: $F.save(os.path.join($DIR, secure_filename(...)))
+      - pattern-not: $F.save(secure_filename(...))
+
+  # ── CWE-269: Privilege flag assigned from request data ──
+  - id: vulnhunterx.python.improper-privilege-management
+    languages: [python]
+    severity: ERROR
+    message: |
+      A privilege flag (is_superuser / is_staff / is_admin) is assigned a
+      value derived from request data. An attacker can set the field in the
+      request body/params and escalate to administrator (CWE-269). Never bind
+      privilege fields from client input — set them server-side from trusted
+      role logic.
+    metadata:
+      cwe: ["CWE-269"]
+      category: security
+      owasp: "A01:2021"
+      references:
+        - https://cwe.mitre.org/data/definitions/269.html
+    patterns:
+      - pattern-either:
+          - pattern: $U.is_superuser = $V
+          - pattern: $U.is_staff = $V
+          - pattern: $U.is_admin = $V
+      - metavariable-pattern:
+          metavariable: $V
+          patterns:
+            - pattern-either:
+                - pattern: request.$X
+                - pattern: request.$X[...]
+                - pattern: request.$X.$M(...)
+                - pattern: request.$X.$Y.$M(...)
+
+  # ── CWE-209: Exception traceback returned in the HTTP response ──
+  - id: vulnhunterx.python.verbose-error
+    languages: [python]
+    severity: WARNING
+    message: |
+      An exception traceback is returned in the HTTP response body, leaking
+      stack frames, file paths, and internal state to the client (CWE-209).
+      Log the detail server-side (logging.exception) and return a generic
+      error message.
+    metadata:
+      cwe: ["CWE-209"]
+      category: security
+      owasp: "A05:2021"
+      references:
+        - https://cwe.mitre.org/data/definitions/209.html
+    patterns:
+      - pattern-either:
+          - pattern: return traceback.format_exc()
+          - pattern: return $RESP(traceback.format_exc())
+          - pattern: return $RESP(traceback.format_exc(), ...)
+          - pattern: HttpResponse(traceback.format_exc())
+          - pattern: HttpResponse(traceback.format_exc(), ...)
+          - pattern: make_response(traceback.format_exc(), ...)
+
+  # ── CWE-942: Flask-CORS wildcard origin with credentials ──
+  - id: vulnhunterx.python.cors-misconfiguration
+    languages: [python]
+    severity: ERROR
+    message: |
+      Flask-CORS configured with origins="*" AND supports_credentials=True
+      reflects any site's authenticated requests, exposing session-bound
+      data cross-origin (CWE-942). Use an explicit origin allowlist whenever
+      credentials are permitted.
+    metadata:
+      cwe: ["CWE-942"]
+      category: security
+      owasp: "A05:2021"
+      references:
+        - https://cwe.mitre.org/data/definitions/942.html
+    patterns:
+      - pattern-either:
+          - pattern: CORS($APP, ..., origins="*", ..., supports_credentials=True, ...)
+          - pattern: CORS($APP, ..., supports_credentials=True, ..., origins="*", ...)
+          - pattern: flask_cors.CORS($APP, ..., origins="*", ..., supports_credentials=True, ...)
+          - pattern: flask_cors.CORS($APP, ..., supports_credentials=True, ..., origins="*", ...)
+
+  # ── CWE-494: Remote script piped to a shell (curl | bash) ──
+  - id: vulnhunterx.python.download-without-integrity
+    languages: [python]
+    severity: ERROR
+    message: |
+      A remote script is downloaded and piped straight to a shell
+      (curl/wget ... | bash) with no integrity check. A compromised or
+      MITM'd endpoint yields immediate code execution (CWE-494, OWASP 2025
+      A03 Software Supply Chain Failures). Pin a checksum/signature and
+      verify it before executing.
+    metadata:
+      cwe: ["CWE-494"]
+      category: security
+      owasp: "A08:2021"
+      references:
+        - https://cwe.mitre.org/data/definitions/494.html
+    patterns:
+      - pattern-either:
+          - pattern: os.system($CMD)
+          - pattern: subprocess.run($CMD, ..., shell=True, ...)
+          - pattern: subprocess.call($CMD, ..., shell=True, ...)
+          - pattern: subprocess.Popen($CMD, ..., shell=True, ...)
+          - pattern: subprocess.check_call($CMD, ..., shell=True, ...)
+      - metavariable-regex:
+          metavariable: $CMD
+          regex: '.*(curl|wget).*\|\s*(ba)?sh.*'
+
+  # ── CWE-755: Fail-open — verify() failure swallowed and treated as success ──
+  - id: vulnhunterx.python.swallowed-exception
+    languages: [python]
+    severity: ERROR
+    message: |
+      A signature/credential verification is wrapped in try/except whose
+      handler returns True (or silently passes), so a verification *failure*
+      is treated as success — a fail-open authentication bypass (CWE-755).
+      Return False / re-raise on exception; only return True on the explicit
+      success path.
+    metadata:
+      cwe: ["CWE-755"]
+      category: security
+      owasp: "A07:2021"
+      references:
+        - https://cwe.mitre.org/data/definitions/755.html
+    patterns:
+      - pattern-either:
+          - pattern: |
+              try:
+                ...
+                $X.verify(...)
+                ...
+              except ...:
+                return True
+          - pattern: |
+              try:
+                ...
+                $X.verify(...)
+                ...
+              except ...:
+                pass
+
+  # ── CWE-90: LDAP injection — request data flows into a search filter ──
+  - id: vulnhunterx.python.ldap-injection
+    languages: [python]
+    severity: ERROR
+    mode: taint
+    message: |
+      Request data flows unescaped into an LDAP search filter. An attacker can
+      inject filter metacharacters (*, ()&|) to bypass authentication or
+      enumerate the directory (CWE-90). Escape with
+      ldap.filter.escape_filter_chars() before building the filter.
+    metadata:
+      cwe: ["CWE-90"]
+      category: security
+      owasp: "A03:2021"
+      references:
+        - https://cwe.mitre.org/data/definitions/90.html
+    pattern-sources:
+      - pattern: request.args.get(...)
+      - pattern: request.args[...]
+      - pattern: request.form.get(...)
+      - pattern: request.form[...]
+      - pattern: request.values.get(...)
+      - pattern: request.GET.get(...)
+      - pattern: request.POST.get(...)
+      - pattern: request.data
+    pattern-sanitizers:
+      - pattern: escape_filter_chars(...)
+      - pattern: ldap.filter.escape_filter_chars(...)
+    pattern-sinks:
+      - pattern: $CONN.search_s(...)
+      - pattern: $CONN.search(...)
+      - pattern: $CONN.search_ext_s(...)
+
+  # ── CWE-1336: Server-Side Template Injection — dynamic Jinja2 template ──
+  - id: vulnhunterx.python.template-injection
+    languages: [python]
+    severity: ERROR
+    message: |
+      A Jinja2 template is compiled from a non-literal (attacker-influenced)
+      string. Jinja2 templates execute Python expressions, so SSTI escalates
+      to remote code execution via {{ ''.__class__.__mro__ }} gadgets
+      (CWE-1336). Render a fixed template file and pass user data as context
+      variables — never build the template body from input.
+    metadata:
+      cwe: ["CWE-1336", "CWE-917"]
+      category: security
+      owasp: "A03:2021"
+      references:
+        - https://cwe.mitre.org/data/definitions/1336.html
+        - https://owasp.org/www-project-web-security-testing-guide/latest/4-Web_Application_Security_Testing/07-Input_Validation_Testing/18-Testing_for_Server-side_Template_Injection
+    patterns:
+      - pattern-either:
+          - pattern: render_template_string($T)
+          - pattern: render_template_string($T, ...)
+          - pattern: jinja2.Template($T).render(...)
+          - pattern: Template($T).render(...)
+          - pattern: $ENV.from_string($T).render(...)
+      - metavariable-pattern:
+          metavariable: $T
+          patterns:
+            - pattern-not: '"..."'
+            - pattern-not: "'...'"
+
+  # ── CWE-943: NoSQL injection — MongoDB $where with a non-literal value ──
+  - id: vulnhunterx.python.nosql-injection
+    languages: [python]
+    severity: ERROR
+    message: |
+      A MongoDB query uses the $where operator with a non-literal value. $where
+      evaluates the value as server-side JavaScript, so attacker-influenced
+      input yields NoSQL injection with full JS expression power (CWE-943).
+      Use native query operators ($eq, $in, $gt) instead of $where.
+    metadata:
+      cwe: ["CWE-943"]
+      category: security
+      owasp: "A03:2021"
+      references:
+        - https://cwe.mitre.org/data/definitions/943.html
+        - https://www.mongodb.com/docs/manual/reference/operator/query/where/
+    patterns:
+      - pattern-either:
+          - pattern: '$C.find({"$where": $X})'
+          - pattern: '$C.find({..., "$where": $X, ...})'
+          - pattern: '$C.find_one({"$where": $X})'
+          - pattern: '$C.find_one({..., "$where": $X, ...})'
+      - metavariable-pattern:
+          metavariable: $X
+          patterns:
+            - pattern-not: '"..."'
+            - pattern-not: "'...'"
+
+  # ── CWE-611: XXE — lxml parser with external entity resolution enabled ──
+  - id: vulnhunterx.python.xxe
+    languages: [python]
+    severity: ERROR
+    message: |
+      An lxml XMLParser is created with resolve_entities=True (or
+      no_network=False), which expands external entities — enabling XXE file
+      disclosure and SSRF when parsing untrusted XML (CWE-611). Use
+      resolve_entities=False and no_network=True, or parse with defusedxml.
+    metadata:
+      cwe: ["CWE-611"]
+      category: security
+      owasp: "A05:2021"
+      references:
+        - https://cwe.mitre.org/data/definitions/611.html
+        - https://github.com/tiran/defusedxml
+    patterns:
+      - pattern-either:
+          - pattern: etree.XMLParser(..., resolve_entities=True, ...)
+          - pattern: lxml.etree.XMLParser(..., resolve_entities=True, ...)
+          - pattern: etree.XMLParser(..., no_network=False, ...)
+          - pattern: lxml.etree.XMLParser(..., no_network=False, ...)

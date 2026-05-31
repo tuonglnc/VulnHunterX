@@ -189,8 +189,14 @@ def _probe_codeql_rules() -> dict[str, set[str]]:
             if r.returncode != 0:
                 continue
             data = json.loads(r.stdout)
+            entries = data if isinstance(data, list) else data.get("queries", [])
             ids = set()
-            for entry in data if isinstance(data, list) else data.get("queries", []):
+            for entry in entries:
+                # `codeql resolve queries --format=json` may return either a list
+                # of metadata objects or a bare list of .ql path strings depending
+                # on the CLI version. Only objects carry a rule id; skip the rest.
+                if not isinstance(entry, dict):
+                    continue
                 meta = entry.get("metadata") or {}
                 rid = meta.get("id") or entry.get("id") or ""
                 if rid:

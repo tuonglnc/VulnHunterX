@@ -264,3 +264,112 @@ rules:
           - pattern: '$M.findOne({ $where: $X })'
           - pattern: '$M.find({ ..., $where: $X, ... })'
           - pattern: '$M.findOne({ ..., $where: $X, ... })'
+
+  # ── CWE-494: Remote script piped to a shell (curl | bash) ──
+  - id: vulnhunterx.js.download-without-integrity
+    languages: [javascript, typescript]
+    severity: ERROR
+    message: |
+      A remote script is downloaded and piped to a shell (curl/wget ... | bash)
+      via child_process with no integrity check. A compromised or MITM'd
+      endpoint yields immediate code execution (CWE-494, OWASP 2025 A03
+      Software Supply Chain Failures). Pin and verify a checksum/signature
+      before executing.
+    metadata:
+      cwe: ["CWE-494"]
+      category: security
+      references:
+        - https://cwe.mitre.org/data/definitions/494.html
+    patterns:
+      - pattern-either:
+          - pattern: child_process.exec($CMD, ...)
+          - pattern: child_process.exec($CMD)
+          - pattern: child_process.execSync($CMD)
+          - pattern: child_process.execSync($CMD, ...)
+          - pattern: exec($CMD)
+          - pattern: execSync($CMD)
+      - metavariable-regex:
+          metavariable: $CMD
+          regex: '.*(curl|wget).*\|\s*(ba)?sh.*'
+
+  # ── CWE-1336: Server-Side Template Injection — dynamic template compile ──
+  - id: vulnhunterx.js.template-injection
+    languages: [javascript, typescript]
+    severity: ERROR
+    message: |
+      A template engine compiles/renders a non-literal (attacker-influenced)
+      string. Server-side template injection in Handlebars / EJS / Pug /
+      Lodash escalates to data disclosure and often remote code execution
+      (CWE-1336). Compile fixed template files and pass user data as context
+      — never build the template body from input.
+    metadata:
+      cwe: ["CWE-1336", "CWE-917"]
+      category: security
+      owasp: "A03:2021"
+      references:
+        - https://cwe.mitre.org/data/definitions/1336.html
+    patterns:
+      - pattern-either:
+          - pattern: handlebars.compile($T)
+          - pattern: Handlebars.compile($T)
+          - pattern: ejs.render($T, ...)
+          - pattern: ejs.compile($T)
+          - pattern: pug.compile($T)
+          - pattern: pug.render($T, ...)
+          - pattern: _.template($T)
+      - metavariable-pattern:
+          metavariable: $T
+          patterns:
+            - pattern-not: '"..."'
+            - pattern-not: "'...'"
+            - pattern-not: '`...`'
+
+  # ── CWE-1333: Regex injection — request data compiled as a RegExp ──
+  - id: vulnhunterx.js.regex-injection
+    languages: [javascript, typescript]
+    severity: WARNING
+    mode: taint
+    message: |
+      Request data is used to construct a RegExp. An attacker can supply a
+      pattern with catastrophic backtracking (ReDoS) that hangs the event
+      loop, or alter match semantics (CWE-1333). Escape the input or match
+      against a fixed, vetted pattern.
+    metadata:
+      cwe: ["CWE-1333"]
+      category: security
+      references:
+        - https://cwe.mitre.org/data/definitions/1333.html
+    pattern-sources:
+      - pattern: req.body.$X
+      - pattern: req.query.$X
+      - pattern: req.params.$X
+      - pattern: req.body[...]
+      - pattern: req.query[...]
+      - pattern: req.params[...]
+    pattern-sinks:
+      - pattern: new RegExp(...)
+      - pattern: RegExp(...)
+
+  # ── CWE-915: Mass assignment — ORM model built from full request body ──
+  - id: vulnhunterx.js.mass-assignment
+    languages: [javascript, typescript]
+    severity: ERROR
+    message: |
+      An ORM model is created/updated from the entire req.body. An attacker
+      can set fields that were never meant to be client-writable (role,
+      isAdmin, balance) — privilege escalation via mass assignment (CWE-915).
+      Pick an explicit allowlist of fields from req.body.
+    metadata:
+      cwe: ["CWE-915"]
+      category: security
+      owasp: "A08:2021"
+      references:
+        - https://cwe.mitre.org/data/definitions/915.html
+    patterns:
+      - pattern-either:
+          - pattern: $M.create(req.body)
+          - pattern: $M.create(req.body, ...)
+          - pattern: $M.update(req.body, ...)
+          - pattern: $M.findByIdAndUpdate($ID, req.body, ...)
+          - pattern: $M.findOneAndUpdate($Q, req.body, ...)
+          - pattern: new $M(req.body)
