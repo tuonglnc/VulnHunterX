@@ -324,3 +324,62 @@ rules:
       - metavariable-regex:
           metavariable: $SECRET
           regex: '(?i).*(password|passwd|pwd|secret|api_key|apikey|token|access_key|private_key).*'
+
+  # ── CWE-434: Unrestricted file upload — saved under attacker filename ──
+  - id: vulnhunterx.python.file-upload
+    languages: [python]
+    severity: ERROR
+    message: |
+      A Werkzeug/Flask uploaded file is saved using its attacker-controlled
+      .filename without secure_filename() or an extension allowlist. The
+      attacker controls the path component and dangerous type — enabling
+      path traversal and web-shell upload (CWE-434). Wrap with
+      werkzeug.utils.secure_filename() and validate the extension.
+    metadata:
+      cwe: ["CWE-434"]
+      category: security
+      owasp: "A04:2021"
+      references:
+        - https://cwe.mitre.org/data/definitions/434.html
+        - https://flask.palletsprojects.com/en/latest/patterns/fileuploads/
+    patterns:
+      - pattern-either:
+          - pattern: $F.save($F.filename)
+          - pattern: $F.save($DIR + $F.filename)
+          - pattern: $F.save(os.path.join($DIR, $F.filename))
+          - pattern: |
+              $NAME = $F.filename
+              ...
+              $F.save(os.path.join($DIR, $NAME))
+      - pattern-not: $F.save(os.path.join($DIR, secure_filename(...)))
+      - pattern-not: $F.save(secure_filename(...))
+
+  # ── CWE-269: Privilege flag assigned from request data ──
+  - id: vulnhunterx.python.improper-privilege-management
+    languages: [python]
+    severity: ERROR
+    message: |
+      A privilege flag (is_superuser / is_staff / is_admin) is assigned a
+      value derived from request data. An attacker can set the field in the
+      request body/params and escalate to administrator (CWE-269). Never bind
+      privilege fields from client input — set them server-side from trusted
+      role logic.
+    metadata:
+      cwe: ["CWE-269"]
+      category: security
+      owasp: "A01:2021"
+      references:
+        - https://cwe.mitre.org/data/definitions/269.html
+    patterns:
+      - pattern-either:
+          - pattern: $U.is_superuser = $V
+          - pattern: $U.is_staff = $V
+          - pattern: $U.is_admin = $V
+      - metavariable-pattern:
+          metavariable: $V
+          patterns:
+            - pattern-either:
+                - pattern: request.$X
+                - pattern: request.$X[...]
+                - pattern: request.$X.$M(...)
+                - pattern: request.$X.$Y.$M(...)

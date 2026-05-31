@@ -206,3 +206,35 @@ rules:
           - pattern: tempnam("/tmp", $X)
           - pattern: tempnam('/tmp', $X)
           - pattern: tmpfile()
+
+  # ── CWE-434: Unrestricted file upload — destination from $_FILES name ──
+  - id: vulnhunterx.php.file-upload
+    languages: [php]
+    severity: ERROR
+    message: |
+      move_uploaded_file() writes the upload to a destination built from the
+      attacker-controlled original filename ($_FILES[..]['name']) with no
+      extension / MIME allowlist. An attacker can upload a .php / .phtml file
+      into a web-served directory and gain remote code execution (CWE-434).
+      Validate the extension against an allowlist and store under a generated
+      name (e.g. bin2hex(random_bytes(16)) . '.' . $ext).
+    metadata:
+      cwe: ["CWE-434"]
+      category: security
+      owasp: "A04:2021"
+      references:
+        - https://cwe.mitre.org/data/definitions/434.html
+        - https://owasp.org/www-community/vulnerabilities/Unrestricted_File_Upload
+    patterns:
+      - pattern-either:
+          - pattern: move_uploaded_file($TMP, $_FILES[...]['name'])
+          - pattern: move_uploaded_file($TMP, $X . $_FILES[...]['name'])
+          - pattern: move_uploaded_file($TMP, $X . $_FILES[...][...])
+          - pattern: |
+              $DST = $X . $_FILES[...]['name'];
+              ...
+              move_uploaded_file($TMP, $DST);
+          - pattern: |
+              $NAME = $_FILES[...]['name'];
+              ...
+              move_uploaded_file($TMP, $Y . $NAME);
