@@ -26,9 +26,9 @@
 
 models:
   # ── Headline tier (publishable, fixed-seed Track-1 subset) ──
-  - id: gpt-4.1
+  - id: gpt-4.1-mini
     provider: openai
-    model: gpt-4.1
+    model: gpt-4.1-mini
     tier: headline
     env: .env.openai
 
@@ -38,21 +38,14 @@ models:
     tier: headline
     env: .env.openai
 
-  - id: deepseek-reasoner
+  - id: deepseek
     provider: openai
-    model: deepseek-reasoner
+    model: deepseek-v4-flash
     tier: headline
-    env: .env.deepseek
-
-  # ── Bulk / scale tier ──
-  - id: deepseek-chat
-    provider: openai
-    model: deepseek-chat
-    tier: bulk
     env: .env.deepseek
 
   - id: ollama-qwen3-coder
     provider: ollama
     model: ollama/qwen3-coder:480b-cloud
-    tier: bulk
+    tier: headline
     env: .env.ollama
