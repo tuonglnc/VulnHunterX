@@ -79,6 +79,7 @@ _DEFAULT_MAX_ITERATIONS: int = (
 
 from benchmarks.adapters.ground_truth import GroundTruthEntry, load_entries  # noqa: E402
 from benchmarks.approaches.base import BenchmarkApproach, BenchmarkResult  # noqa: E402
+from benchmarks.metrics import deepseek_v4_cost  # noqa: E402
 from benchmarks.metrics.evaluator import ApproachMetrics, evaluate  # noqa: E402
 from benchmarks.scripts._progress import (  # noqa: E402
     ProgressDisplay,
@@ -484,6 +485,7 @@ def run_one(
     jobs: int = 1,
     llm_concurrency: int = 0,
     only_entries: set[str] | None = None,
+    model: str | None = None,
 ) -> tuple[ApproachMetrics, list[BenchmarkResult]] | None:
     """Evaluate one (dataset, approach) pair with incremental checkpointing.
 
@@ -701,6 +703,9 @@ def run_one(
             pool.shutdown(wait=True)
 
     all_results = prior_results + _completed_results()
+    # Back-fill cost for DeepSeek V4 models LiteLLM can't price yet (benchmark-only
+    # hard-coded prices; no-op for other models / rows LiteLLM already priced).
+    deepseek_v4_cost.backfill(model or "", all_results)
     metrics = evaluate(all_results, approach_name, dataset_name, nmd_handling)
     metrics.wall_seconds = time.monotonic() - pair_wall_start
     progress.finish(metrics)
@@ -1235,6 +1240,7 @@ def main() -> int:
                         jobs=args.jobs,
                         llm_concurrency=args.llm_concurrency,
                         only_entries=only_entries_set,
+                        model=args.model,
                     )
                     if result is not None:
                         metrics, results = result

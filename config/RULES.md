@@ -1,6 +1,6 @@
 # SAST Security Scan Rules
 
-This document is a reference inventory of every static-analysis rule set VulnHunterX runs, the profiles that select them, and how their findings reach the LLM verification stage. It is sourced from [rule_categories.yaml](rule_categories.yaml), [codeql-custom/](codeql-custom/), [semgrep-custom/](semgrep-custom/), and [prompts/](prompts/). For the surrounding pipeline architecture, see [CLAUDE.md](../CLAUDE.md).
+This document is a reference inventory of every static-analysis rule set VulnHunterX runs, the profiles that select them, and how their findings reach the LLM verification stage. It is sourced from [rule_categories.yaml](rule_categories.yaml), [codeql-custom/](codeql-custom/), [semgrep-custom/](semgrep-custom/), and [prompts/](prompts/). For the surrounding pipeline architecture, see the [Pipeline Stages](../README.md#pipeline-stages) section of the README.
 
 ## 1. Overview
 

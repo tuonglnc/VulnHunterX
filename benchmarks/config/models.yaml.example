@@ -41,7 +41,7 @@ models:
     env: .env.openai
 
   - id: deepseek
-    provider: openai
+    provider: deepseek
     model: deepseek-v4-flash
     tier: headline
     env: .env.deepseek

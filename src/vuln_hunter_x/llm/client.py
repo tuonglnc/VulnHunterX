@@ -144,6 +144,14 @@ class LLMClient:
             # Prefix the model name so LiteLLM routes to the Anthropic backend.
             if not self.model.startswith("anthropic/"):
                 self.model = "anthropic/" + self.model
+        elif provider == "deepseek":
+            # Route via LiteLLM's native DeepSeek provider (not openai/ + base_url)
+            # so completion_cost() can price the call from the model name. Auth /
+            # base_url are resolved in _build_completion_kwargs (DEEPSEEK_* with an
+            # OPENAI_* fallback). Known ids (deepseek-chat/-reasoner/-v3.2) price
+            # immediately; newer ids report $0 until LiteLLM's table includes them.
+            if not self.model.startswith("deepseek/"):
+                self.model = "deepseek/" + self.model
 
         # Build key pool only when there's something to rotate. A single key
         # is stashed on the client and sent directly.
@@ -181,6 +189,7 @@ class LLMClient:
         """Build kwargs for litellm.completion with provider-specific settings."""
         model = self.model
         api_base = None
+        api_key = None
         if self.provider == "openai":
             api_base = (
                 os.environ.get("OPENAI_BASE_URL") or os.environ.get("OPENAI_API_BASE") or ""
@@ -188,6 +197,18 @@ class LLMClient:
             api_base = api_base.rstrip("/") if api_base else None
             if api_base and not model.startswith("openai/"):
                 model = "openai/" + model
+        elif self.provider == "deepseek":
+            # LiteLLM auto-reads DEEPSEEK_API_KEY; fall back to OPENAI_* so an
+            # existing OpenAI-keyed DeepSeek .env keeps working after switching
+            # LLM_PROVIDER to "deepseek". api_base defaults to api.deepseek.com.
+            api_key = os.environ.get("DEEPSEEK_API_KEY") or os.environ.get("OPENAI_API_KEY")
+            api_base = (
+                os.environ.get("DEEPSEEK_API_BASE")
+                or os.environ.get("OPENAI_BASE_URL")
+                or os.environ.get("OPENAI_API_BASE")
+                or ""
+            ).strip()
+            api_base = api_base.rstrip("/") if api_base else None
         kwargs: dict[str, Any] = {
             "model": model,
             "messages": messages,
@@ -196,6 +217,8 @@ class LLMClient:
         }
         if api_base:
             kwargs["api_base"] = api_base
+        if api_key:
+            kwargs["api_key"] = api_key
         if self.provider == "ollama" and self._is_ollama_cloud:
             kwargs["api_base"] = os.environ["OLLAMA_API_BASE"].rstrip("/")
             if self._ollama_pool is not None:
