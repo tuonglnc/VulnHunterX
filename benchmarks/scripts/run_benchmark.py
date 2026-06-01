@@ -79,7 +79,7 @@ _DEFAULT_MAX_ITERATIONS: int = (
 
 from benchmarks.adapters.ground_truth import GroundTruthEntry, load_entries  # noqa: E402
 from benchmarks.approaches.base import BenchmarkApproach, BenchmarkResult  # noqa: E402
-from benchmarks.metrics.cost import Pricing, load_pricing  # noqa: E402
+from benchmarks.metrics import deepseek_v4_cost  # noqa: E402
 from benchmarks.metrics.evaluator import ApproachMetrics, evaluate  # noqa: E402
 from benchmarks.scripts._progress import (  # noqa: E402
     ProgressDisplay,
@@ -287,8 +287,6 @@ def _save_checkpoint(
     status: str = "completed",
     raw_sast_tp: int | None = None,
     raw_sast_fp: int | None = None,
-    pricing: dict[str, Pricing] | Pricing | None = None,
-    model_name: str | None = None,
 ) -> None:
     path = _checkpoint_path(run_dir, dataset, approach)
     processed_ids = [r.entry.id for r in results]
@@ -303,7 +301,6 @@ def _save_checkpoint(
         # ── Existing fields (backward-compatible) ─────────────────────────
         "metrics": metrics.summary_dict(
             raw_sast_tp=raw_sast_tp, raw_sast_fp=raw_sast_fp,
-            pricing=pricing, model_name=model_name,
         ),
         "results": [r.to_dict() for r in results],
     }
@@ -488,6 +485,7 @@ def run_one(
     jobs: int = 1,
     llm_concurrency: int = 0,
     only_entries: set[str] | None = None,
+    model: str | None = None,
 ) -> tuple[ApproachMetrics, list[BenchmarkResult]] | None:
     """Evaluate one (dataset, approach) pair with incremental checkpointing.
 
@@ -705,6 +703,9 @@ def run_one(
             pool.shutdown(wait=True)
 
     all_results = prior_results + _completed_results()
+    # Back-fill cost for DeepSeek V4 models LiteLLM can't price yet (benchmark-only
+    # hard-coded prices; no-op for other models / rows LiteLLM already priced).
+    deepseek_v4_cost.backfill(model or "", all_results)
     metrics = evaluate(all_results, approach_name, dataset_name, nmd_handling)
     metrics.wall_seconds = time.monotonic() - pair_wall_start
     progress.finish(metrics)
@@ -740,7 +741,11 @@ def main() -> int:
         nargs="+",
         default=["all"],
         metavar="APPROACH",
-        help=f"One or more of: {' '.join(_approach_names)} all",
+        help=(
+            f"One or more of: {' '.join(_approach_names)} all. "
+            "'ablation' expands to vulnhunterx + ablation-generic + ablation-zero "
+            "(the guided-question ablation; specific arm = vulnhunterx, not re-run)."
+        ),
     )
     parser.add_argument("--model", default=os.environ.get("LLM_MODEL", "gpt-4.1"))
     parser.add_argument("--provider", default=os.environ.get("LLM_PROVIDER", "openai"))
@@ -948,49 +953,7 @@ def main() -> int:
         action="store_true",
         help="Run vulnhunterx at max_iterations=1,2,3 to show multi-turn contribution",
     )
-    parser.add_argument(
-        "--pricing",
-        type=Path,
-        default=None,
-        metavar="PATH",
-        help=(
-            "Path to a JSON pricing schedule (USD per 1M tokens) used to "
-            "compute imputed_api_cost_usd. Defaults to the built-in "
-            "DEFAULT_PRICING in benchmarks/metrics/cost.py. "
-            "Use this to cost models not in the default schedule "
-            "(e.g. DeepSeek): --pricing pricing.deepseek.json."
-        ),
-    )
     args = parser.parse_args()
-
-    try:
-        pricing_schedule = load_pricing(args.pricing)
-    except (FileNotFoundError, ValueError) as exc:
-        print(f"error: --pricing: {exc}", file=sys.stderr)
-        return 2
-
-    # Register custom pricing with LiteLLM so litellm.completion_cost resolves
-    # for non-default models (e.g. qwen via Anthropic-compatible proxy).
-    # Otherwise LiteLLM prints "Provider List: ..." on every call.
-    try:
-        import litellm  # noqa: PLC0415
-        registry: dict[str, dict] = {}
-        schedule_items = (
-            pricing_schedule.items() if isinstance(pricing_schedule, dict) else {}
-        )
-        for model_name, p in schedule_items:
-            registry[model_name] = {
-                "input_cost_per_token": p.input / 1_000_000,
-                "output_cost_per_token": p.output / 1_000_000,
-                "litellm_provider": (
-                    model_name.split("/", 1)[0] if "/" in model_name else "openai"
-                ),
-                "mode": "chat",
-            }
-        if registry:
-            litellm.register_model(registry)
-    except Exception:
-        pass
 
     # Determine datasets and approaches via the registries.
     # ``all`` expands to every registered adapter. A family tag (e.g.
@@ -1013,6 +976,20 @@ def main() -> int:
         if "all" in args.approach
         else list(dict.fromkeys(args.approach))
     )
+
+    # "ablation" is a meta-name for the guided-question ablation study: it holds
+    # the pipeline constant (identical to vulnhunterx) and varies only the
+    # guided questions. The "specific" arm IS vulnhunterx, so it is reused
+    # rather than re-run — expand to that trio (dedup preserves order and
+    # prevents a duplicate vulnhunterx pass if vulnhunterx was also requested).
+    if "ablation" in approaches:
+        expanded: list[str] = []
+        for a in approaches:
+            if a == "ablation":
+                expanded += ["vulnhunterx", "ablation-generic", "ablation-zero"]
+            else:
+                expanded.append(a)
+        approaches = list(dict.fromkeys(expanded))
 
     if args.iteration_sweep:
         approaches = ["vulnhunterx"]
@@ -1263,6 +1240,7 @@ def main() -> int:
                         jobs=args.jobs,
                         llm_concurrency=args.llm_concurrency,
                         only_entries=only_entries_set,
+                        model=args.model,
                     )
                     if result is not None:
                         metrics, results = result
@@ -1283,7 +1261,6 @@ def main() -> int:
                     run_dir, dataset_name, name, results, m,
                     status="completed",
                     raw_sast_tp=raw_sast_tp, raw_sast_fp=raw_sast_fp,
-                    pricing=pricing_schedule, model_name=args.model,
                 )
                 all_metrics.append(m)
 

@@ -31,12 +31,14 @@ The design rationale, papers reviewed, and dataset selection criteria are in [RE
 
 ## Approaches
 
-| Approach      | What it does                                                                                                                |
-| ------------- | --------------------------------------------------------------------------------------------------------------------------- |
-| `raw-sast`    | Every SAST finding is treated as TP, no LLM call. Establishes upper-bound recall and reveals the underlying FP rate.        |
-| `vulnhunterx` | Full pipeline: rule-specific guided questions + answer-before-verdict + multi-turn context expansion.                       |
-| `ablation`    | Runs each entry through three internal variants — *zero-shot*, *generic-questions*, *rule-specific* — to isolate the contribution of guided-question authorship vs. the protocol itself. |
-| `all`         | Shorthand for `raw-sast vulnhunterx ablation`.                                                                              |
+| Approach           | What it does                                                                                                          |
+| ------------------ | -------------------------------------------------------------------------------------------------------------------- |
+| `raw-sast`         | Every SAST finding is treated as TP, no LLM call. Establishes upper-bound recall and reveals the underlying FP rate.  |
+| `vulnhunterx`      | Full pipeline: rule-specific guided questions + answer-before-verdict + multi-turn context expansion. Also serves as the ablation's *specific* arm. |
+| `ablation`         | Meta-name for the guided-question ablation. Expands to `vulnhunterx` + `ablation-generic` + `ablation-zero`, holding the whole pipeline constant and varying **only** the guided questions. The *specific* arm **is** `vulnhunterx` (reused, not re-run) — so there is no duplicate LLM pass. |
+| `ablation-generic` | The `vulnhunterx` pipeline with only `default_questions.yaml` (generic fallback questions).                           |
+| `ablation-zero`    | The `vulnhunterx` pipeline with no guided questions (zero-shot).                                                      |
+| `all`              | Every registered approach: `raw-sast vulnhunterx ablation-generic ablation-zero` — i.e. baselines + the full guided-question ablation. |
 
 ---
 
@@ -204,10 +206,13 @@ the **same** dataset/approach, use the matrix runner — it launches one
 DeepSeek's `OPENAI_BASE_URL` doesn't bleed into a plain-OpenAI run) and writes a
 `matrix.json`. Then `compare_models.py` aggregates them into one `COMPARISON.md`.
 
-The matrix is defined in [config/models.yaml](config/models.yaml) — edit it to add
-models, pin a `pricing` file, or point at a per-model `.env`. Default tiers:
-`gpt-4.1` / `gpt-5` (GPT), `deepseek-chat` / `deepseek-reasoner` (DeepSeek),
-`ollama/qwen3-coder:480b-cloud` (bulk).
+The matrix is defined in `config/models.yaml`. Copy the tracked template
+[config/models.yaml.example](config/models.yaml.example) to `config/models.yaml`
+(gitignored) and edit it to add models or point at a per-model `.env`; the runner
+prefers `models.yaml` and falls back to the `.example`. For each model's `env:`,
+copy the matching `config/.env.<name>.example` to a repo-root `.env.<name>` and
+fill in real keys. Default tiers: `gpt-4.1` / `gpt-5` (GPT), `deepseek-v4-flash` /
+`deepseek-v4-pro` (DeepSeek), `ollama/qwen3-coder:480b-cloud` (bulk).
 
 ```bash
 # Dry-run the whole matrix (mock LLM, no API cost)
@@ -225,10 +230,9 @@ python benchmarks/scripts/compare_models.py \
     --run-dir benchmarks/results/matrix_2026q2 --charts
 ```
 
-Pricing auto-resolves per model from the built-in `DEFAULT_PRICING` (covers
-`gpt-*`, `gpt-5`, `deepseek-*`, `qwen*`, `claude*`); local/Ollama models impute to
-$0. Pass `--pricing <file>` or set `pricing:` in `models.yaml` to override.
-Forward dataset-specific flags after `--`, e.g. `… -- --juliet-per-cwe 20`.
+Cost is the real provider-reported API cost (`$0` for local/Ollama models and any
+model LiteLLM has no price for). Forward dataset-specific flags after `--`,
+e.g. `… -- --juliet-per-cwe 20`.
 
 > Run the matrix on **Track-1** datasets (OpenVuln, OWASP, RealVuln, SecLLMHolmes,
 > security-rules). Track-2 detection sets (DiverseVul) are excluded from the
@@ -382,7 +386,10 @@ or pass `repos_cache` programmatically when calling
                     realvuln | openvuln | security-rules |
                     all  (default: secllmholmes)
                     `owasp` runs both OWASP Java + Python; `all` runs every dataset.
---approach          One or more of: raw-sast vulnhunterx ablation all  (default: all)
+--approach          One or more of: raw-sast vulnhunterx ablation-generic
+                    ablation-zero ablation all  (default: all).
+                    `ablation` expands to vulnhunterx + ablation-generic + ablation-zero
+                    (specific arm = vulnhunterx, reused not re-run).
 --model             LLM model name  (default: LLM_MODEL from .env, fallback gpt-4.1)
 --provider          openai | anthropic | ollama  (default: LLM_PROVIDER from .env)
 --limit N           Max entries per dataset, 0=all  (default: 0)
@@ -391,7 +398,7 @@ or pass `repos_cache` programmatically when calling
 --include-unknown-cwe  DiverseVul only: keep records with no CWE mapping (off by default)
 --juliet-per-cwe N  Juliet only: max entries per CWE, balanced TP/FP.
                     5=small (~40)  20=standard (~160) [default]  0=all CWEs (~64K)
---max-iterations N  Multi-turn rounds for vulnhunterx/generic  (default: 10)
+--max-iterations N  Multi-turn rounds for vulnhunterx and ablation arms  (default: 10)
 --nmd-handling      exclude | fp  (default: exclude)
 --dry-run           Mock LLM responses — no API cost
 --resume            Skip completed pairs; continue in-progress pairs from last checkpoint
@@ -452,6 +459,8 @@ benchmarks/results/<timestamp>/
 ├── summary.json                        # All metrics in one file
 ├── secllmholmes_raw-sast_results.json  # Per-approach checkpoints
 ├── secllmholmes_vulnhunterx_results.json
+├── secllmholmes_ablation-generic_results.json   # ablation arms (when run)
+├── secllmholmes_ablation-zero_results.json
 ├── ...
 ├── REPORT.md                           # Human-readable report
 ├── benchmark.log                       # Full DEBUG/INFO log
@@ -550,6 +559,7 @@ python benchmarks/scripts/run_benchmark.py \
 
 ### New approach
 
-1. Subclass `BenchmarkApproach` in `benchmarks/approaches/`.
-2. Implement `evaluate(entry: GroundTruthEntry) -> BenchmarkResult`.
-3. Register it in `_build_approach()` in `run_benchmark.py`.
+1. Subclass `RegisteredApproach` in `benchmarks/approaches/`.
+2. Implement `evaluate(entry: GroundTruthEntry) -> BenchmarkResult` and `from_options()`.
+3. Decorate the class with `@register_approach` and set a unique class-level `name`.
+4. If it lives in a new module, add that module to `_ensure_loaded()` in `benchmarks/approaches/registry.py` so the registry imports it.
