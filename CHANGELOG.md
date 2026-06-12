@@ -5,9 +5,22 @@ All notable changes to VulnHunterX are documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.1.0] - 2026-04-12
+## [1.0.0] - 2026-06-12
 
 ### Added
+- DeepSeek as an LLM provider, with model/tier support wired into the
+  CLI and benchmark runner.
+- Custom-rule expansion across all supported languages, layered onto
+  the built-in suites: CWE Top 25 gaps (file upload, privilege
+  management, resource exhaustion), OWASP 2025 categories (security
+  misconfiguration, supply-chain, exceptional conditions), new CWE
+  classes (LDAP injection, XPath injection, SSTI), and cross-language
+  symmetry for NoSQL injection, ReDoS, XXE, open redirect,
+  mass-assignment, and SSRF. Golden fixtures back the custom rules.
+- ContextProvider can now fetch full function bodies and callee
+  implementations on demand, deepening multi-turn verification context.
+- Fuzzing corpus support and crash triage: ASan/UBSan parsing,
+  crash deduplication, and severity classification.
 - Dataset / approach registry pattern in the benchmark harness. Adding
   a new dataset or benchmark approach is now a single-file change via
   `@register_adapter` / `@register_approach`.
@@ -46,6 +59,13 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
   global LLM-call concurrency.
 
 ### Changed
+- Go verification hardened with new security rules and improved context
+  extraction.
+- JavaScript security-rule handling and context verification refined.
+- Vulnerability-analysis prompts and logic refined for correctness rules
+  to reduce over-confirmation.
+- `litellm.drop_params` is set so gpt-5 / o-series models run correctly
+  (they reject non-default `temperature`).
 - Verification engine `min_iterations` gate now fires regardless of
   whether a `context_provider` is configured — fixes a silent disable
   that produced premature TP/FP verdicts on memory-safety CWEs.
@@ -72,6 +92,11 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
   `--dataset owasp`) are discovered from the registry, not hard-coded.
 
 ### Fixed
+- `rule_categories.yaml` now loads correctly so category filtering
+  works as configured.
+- Filename collision in verdict-file generation that could cause
+  results to overwrite one another.
+- CWE sampling and guided-question retrieval in benchmarks.
 - Tree-sitter `end_line` extraction for multi-line function signatures
   in Python `functions.ql`.
 - Path traversal guard in `ContextProvider` when reading source files
