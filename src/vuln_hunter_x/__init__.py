@@ -17,7 +17,7 @@ Example usage:
         print(f"{verdict.finding.rule_id}: {verdict.verdict}")
 """
 
-__version__ = "0.1.0"
+__version__ = "1.0.0"
 __author__ = "VulnHunterX Team"
 
 from vuln_hunter_x.core.types import Finding, GuidedQuestions, Verdict
