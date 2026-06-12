@@ -11,6 +11,7 @@ from vuln_hunter_x.core.types import Finding, Verdict, VerificationResult
 from vuln_hunter_x.verification.engine import (
     VerificationEngine,
     _downgrade_local_prototype_pollution,
+    _is_nonproduction_path,
     _is_test_path,
     _verdict_filename,
 )
@@ -68,6 +69,39 @@ class TestIsTestPath:
     def test_spec_directory_not_matched(self):
         # spec/ is not in the default exclusion list
         assert _is_test_path("src/spec/foo.js") is False
+
+
+class TestIsNonProductionPath:
+    """Tests for _is_nonproduction_path (flag, not drop)."""
+
+    def test_test_bench_fuzz_stems(self):
+        assert _is_nonproduction_path("test_foo.c") is True
+        assert _is_nonproduction_path("src/foo_test.c") is True
+        assert _is_nonproduction_path("src/decode_fuzzer.c") is True
+        assert _is_nonproduction_path("benches/bench_main.c") is True
+
+    def test_explicit_harness_filenames(self):
+        # libjpeg-turbo harnesses live directly in src/ with no test/ segment
+        assert _is_nonproduction_path("src/tjunittest.c") is True
+        assert _is_nonproduction_path("src/tjbench.c") is True
+        assert _is_nonproduction_path("src/tjdecomp.c") is True
+
+    def test_vendored_segments(self):
+        assert _is_nonproduction_path("src/spng/zlib/zutil.c") is True
+        assert _is_nonproduction_path("third_party/foo/bar.c") is True
+        assert _is_nonproduction_path("deps/zlib/inflate.c") is True
+
+    def test_production_code_not_matched(self):
+        assert _is_nonproduction_path("src/jdlhuff.c") is False
+        assert _is_nonproduction_path("src/jidctint.c") is False
+        assert _is_nonproduction_path("parser.c") is False
+        assert _is_nonproduction_path("") is False
+
+    def test_does_not_overmatch_production_lookalikes(self):
+        # Must not match production files that merely contain the substring.
+        assert _is_nonproduction_path("src/contest.c") is False
+        assert _is_nonproduction_path("unittest_utils.py") is False
+        assert _is_nonproduction_path("src/attestation.c") is False
 
     def test_test_word_in_filename_not_matched(self):
         # "testing_helper.py" or "contest.c" should NOT be excluded
