@@ -292,7 +292,7 @@ def title_slide(footer):
     return s
 
 
-PART_TOTAL = 7
+PART_TOTAL = 4
 
 
 def section_slide(kicker, title):
@@ -480,27 +480,22 @@ def block_arrow(s, l, t, w, h, color):
 # 1 — Title
 title_slide("60-minute workshop  ·  for developers  ·  CodeQL + Semgrep + LLM triage")
 _notes(prs.slides[-1], """
-Welcome. In 60 minutes you'll learn what VulnHunterX is, how it works, how to
-install the whole toolchain (including on Windows), and you'll run it yourself.
-We finish with exercises and homework. Audience: developers — you don't need to
-be a security expert.
+Welcome. Four parts: what VulnHunterX is (features, architecture, methodology and
+benchmark results), how to install and use it, a real worked example on dvpwa, then
+homework on dvcp. Audience: developers — no security expertise needed.
 """)
 
-# 2 — Agenda (numbered cards)
-card_grid_slide("Agenda — 60 minutes", [
-    {"head": "1 · The problem", "body": "Why SAST drowns you in false positives  ·  5 min", "accent": ROSE},
-    {"head": "2 · What VulnHunterX is", "body": "The one-sentence pitch  ·  5 min", "accent": INDIGO},
-    {"head": "3 · How it works", "body": "Pipeline + the multi-turn loop  ·  12 min", "accent": CYAN},
-    {"head": "4 · Toolchain & install", "body": "CodeQL, Semgrep, tree-sitter  ·  10 min", "accent": AMBER},
-    {"head": "5 · Windows?", "body": "What runs natively, what needs WSL2  ·  5 min", "accent": SLATE},
-    {"head": "6 · Workshop", "body": "Live demo — run it together  ·  10 min", "accent": ORANGE},
-    {"head": "7 · Exercises", "body": "Hands-on + homework  ·  5 min", "accent": EMERALD},
-    {"head": "Wrap-up", "body": "Recap & references  ·  3 min", "accent": INDIGO},
-], cols=2, top=1.55, card_h=1.18, gap=0.28,
-   notes="Set expectations. Parts 6 and 7 are hands-on — have laptops ready.")
+# 2 — Agenda (4 parts)
+card_grid_slide("Agenda — 4 parts", [
+    {"head": "1 · VulnHunterX introduction", "body": "Features · architecture · methodology · results", "accent": INDIGO},
+    {"head": "2 · How to install & use", "body": "Toolchain, install, configure, run a scan", "accent": CYAN},
+    {"head": "3 · Real example — dvpwa", "body": "Scan a vulnerable Python web app, verify the verdicts", "accent": ORANGE},
+    {"head": "4 · Homework — dvcp", "body": "Scan the Damn Vulnerable C Program at home", "accent": EMERALD},
+], cols=2, top=1.95, card_h=1.55, gap=0.3, head_size=19, body_size=13.5,
+   notes="Four parts: understand it, install it, watch it work on dvpwa, then do it yourself on dvcp.")
 
 # 3 — SECTION
-section_slide("Part 1", "The problem")
+section_slide("Part 1", "VulnHunterX — features, architecture, methodology, results")
 
 # 4 — Problem funnel (diagram)
 s = content_slide("From noise to signal")
@@ -541,10 +536,7 @@ a human triaging the results — alert fatigue means real bugs get buried.
 VulnHunterX inserts an LLM verification stage to cut the noise.
 """)
 
-# 5 — SECTION
-section_slide("Part 2", "What VulnHunterX is")
-
-# 6 — one-sentence statement card
+# 5 — one-sentence statement card
 s = content_slide("VulnHunterX in one sentence")
 big = soft_shadow(shape(s, RR, Inches(0.9), Inches(1.7), Inches(11.5), Inches(2.5),
                         fill=CARD, line=BORDER))
@@ -573,7 +565,7 @@ Vulnhalla is a CyberArk methodology (reference at the end). The distinction vs
 and fetches real surrounding code instead of guessing from one snippet.
 """)
 
-# 7 — Key feature cards
+# 6 — Key feature cards
 card_grid_slide("Key features", [
     {"head": "8 languages", "body": "C, C++, Python, JavaScript, PHP, Java, Go, C#", "accent": INDIGO},
     {"head": "3 SAST engines", "body": "CodeQL · Semgrep · OpenGrep  (--tool …)", "accent": CYAN},
@@ -589,10 +581,7 @@ C# is the newest language — buildless CodeQL extraction, no dotnet build neede
 Most of the room will have at least one of these 8 languages in their stack.
 """)
 
-# 8 — SECTION
-section_slide("Part 3", "How it works")
-
-# 9 — Pipeline flowchart (diagram)
+# 7 — Pipeline flowchart (diagram)
 s = content_slide("The pipeline — 5 steps, 1 command")
 nodes = [
     ("Source", "git / local / repos.yaml", SLATE),
@@ -640,7 +629,7 @@ README "Pipeline Stages". prepare → analyze → verify → report are the core
 Linux/macOS (covered under Windows support).
 """)
 
-# 10 — 4-stage stepper (diagram)
+# 8 — 4-stage stepper (diagram)
 s = content_slide("The 4 core stages")
 stages = [
     ("1", "prepare", "Clone + CodeQL DB +\ncontext CSVs", INDIGO),
@@ -672,7 +661,7 @@ Run stages individually or all at once with `scan`. Stages 2-3 accept
 --local-path to run directly on any directory without a config entry.
 """)
 
-# 11 — Multi-turn loop flowchart (diagram)
+# 9 — Multi-turn loop flowchart (diagram)
 s = content_slide("The Vulnhalla multi-turn loop")
 # nodes
 flow_node(s, Inches(0.6), Inches(1.65), Inches(2.2), Inches(1.2),
@@ -718,7 +707,92 @@ the last three are C/C++-specific (use-after-free / TOCTOU). The loop
 deduplicates requests and can force a decision if the LLM stalls.
 """)
 
-# 12 — Verdict card mock (image-like)
+# 10 — Guided questions: the contract (YAML anatomy)
+code_slide("Guided questions: the per-language contract", [
+    "# config/prompts/python_questions.yaml  — one bank per language",
+    "py/sql-injection:",
+    "  short_description: User input concatenated into SQL query",
+    "  questions:                          # answered IN ORDER, before any verdict",
+    "    - Quote the EXACT sink (cursor.execute, line N) and name the variable.",
+    "    - List EVERY assignment to that variable on each path, with line numbers.",
+    "    - Does the value derive from request.args/form/json, or a safe source?",
+    "    - Name the SPECIFIC defense — parameterised execute(sql, params), ORM.",
+    "  context_hint: Trace request input -> transformations -> query execution.",
+    "  additional_context: [caller, callees]   # fetched on demand mid-loop",
+    "  min_iterations: 2                        # force a second reasoning pass",
+], notes="""
+Each *_questions.yaml is a per-language bank of rule-specific checklists, loaded by
+QuestionsLoader (src/vuln_hunter_x/questions/loader.py). The questions are written to
+force EXACT sink quoting, full assignment tracing, and concrete defense naming — the
+opposite of pattern-matching a snippet. additional_context drives the multi-turn fetch
+loop; min_iterations forces a second look on FP-prone classes.
+""")
+
+# 11 — Same CWE, every language
+s = card_grid_slide("Same CWE, every language — CWE-89 / SQL injection", [
+    {"head": "py/sql-injection", "body": "sink: cursor.execute(...)  ·  defense: parameterised execute(sql, params) / ORM .filter()", "accent": INDIGO},
+    {"head": "java/sql-injection", "body": "sink: Statement.executeQuery(...)  ·  defense: PreparedStatement with bound params", "accent": CYAN},
+    {"head": "js/sql-injection", "body": "sink: db.query(`...${x}`)  ·  defense: parameterised driver call / placeholders", "accent": AMBER},
+    {"head": "php/sql-injection", "body": "sink: mysqli_query(...)  ·  defense: prepared statements / PDO bound params", "accent": EMERALD},
+], cols=2, top=1.6, card_h=1.6, gap=0.3, head_size=18, body_size=13.5)
+strip = soft_shadow(shape(s, RR, Inches(0.6), Inches(5.45), Inches(12.15), Inches(1.4),
+                          fill=DARK))
+text_in(strip, [
+    [("Same ordered checklist shape", 16, AMBER, True, False),
+     (" — language-specific sinks, sanitizers & framework defenses.", 14, WHITE, False, False)],
+    [(f"{QUESTION_BANKS} banks", 15, CYAN, True, False),
+     ("  cpp · cs · go · java · js · php · python  (+ default fallback)", 13.5, WHITE, False, False)],
+    [("No SQL bank for C/C++", 13.5, ROSE, True, False),
+     ("  — instead C/C++ gets memory-safety banks: use-after-free, integer-overflow.", 13, MUTE, False, True)],
+], align=CENTER)
+_notes(s, """
+A common CWE like SQL injection (CWE-89) gets a bank in every framework language. The
+checklists share structure but name the REAL APIs of each language — that is what makes
+the LLM cite concrete evidence. C/C++ has no native SQL, so there is no SQL bank there;
+the C/C++ banks target memory-safety classes instead (use-after-free, integer-overflow).
+""")
+
+# 12 — Routing a finding to its questions
+s = content_slide("Routing a finding to its question bank")
+textbox(s, Inches(0.6), Inches(1.22), Inches(12), Inches(0.45),
+        [[("QuestionsLoader resolves every finding to a bank through ordered fallback tiers.",
+           15, GREY, False, True)]])
+tiers = [
+    ("exact", "ruleId matches a bank key — CodeQL: py/sql-injection", EMERALD),
+    ("normalized · prefix · lang_prefix", "tolerate id variants & same-language partials", CYAN),
+    ("cwe", "Semgrep has no CodeQL-style id → route by CWE tag via cwe_question_map\n(config/rule_categories.yaml):  CWE-89 → \"sql-injection\" → py/sql-injection", INDIGO),
+    ("default → generic", "fall back to default_questions.yaml, then an 8-step generic checklist", SLATE),
+]
+y = Inches(1.85)
+for head, body, col in tiers:
+    h = Inches(0.92) if "\n" in body else Inches(0.72)
+    cd = soft_shadow(shape(s, RR, Inches(0.6), y, Inches(12.15), h, fill=CARD, line=BORDER))
+    shape(s, RR, Inches(0.6), y, Inches(0.13), h, fill=col)
+    paras = [[(head + ":   ", 15, col, True, False),
+              (body.split("\n")[0], 13.5, GREY, False, False)]]
+    for extra in body.split("\n")[1:]:
+        paras.append([(extra, 12.5, GREY, False, False)])
+    text_in(cd, paras, align=LEFT, anchor=MID, ml=0.3)
+    y = int(y + h + Inches(0.16))
+ovr = soft_shadow(shape(s, RR, Inches(0.6), y, Inches(12.15), Inches(1.2), fill=DARK))
+text_in(ovr, [
+    [("Multi-iteration override", 15, AMBER, True, False),
+     ("   taint CWEs (22/78/79/89/90/94/611/918…) + access-control (200/264/287/862/863…)",
+      13, WHITE, False, False)],
+    [("force min_iterations = 2.  ", 13.5, WHITE, False, False),
+     ("OWASP-python CWE-22: 57.1% (1 iter) → 95.8% (2 iter).", 14, EMERALD, True, False),
+     ("  Taint gated to framework langs; access-control all langs.", 12.5, MUTE, False, True)],
+], align=CENTER)
+_notes(s, """
+This is why a Semgrep finding (no CodeQL id) still lands on a rule-specific checklist —
+it routes by its CWE tag. And why path-traversal / SQLi verdicts get a forced second
+pass: the _CWE_MIN_ITERATIONS_OVERRIDE table (loader.py) raises min_iterations to 2 for
+FP-prone classes. Measured on the OWASP-python benchmark: CWE-22 accuracy jumped from
+57.1% to 95.8% with the second iteration. Taint overrides are gated to framework
+languages (no benefit on C); access-control applies everywhere.
+""")
+
+# 13 — Verdict card mock (image-like)
 s = content_slide("What a verdict looks like")
 card = soft_shadow(shape(s, RR, Inches(0.6), Inches(1.5), Inches(7.4), Inches(5.0),
                          fill=CARD, line=BORDER))
@@ -764,7 +838,7 @@ model reasons in pattern-matching language without citing actual code — a
 deliberate guard against confident hallucination.
 """)
 
-# 13 — Coverage stat cards (diagram)
+# 14 — Coverage stat cards (diagram)
 s = content_slide("Rules & coverage", )
 textbox(s, Inches(0.6), Inches(1.25), Inches(12), Inches(0.45),
         [[("Counted from config/ at build time — not copied from the README.",
@@ -803,10 +877,106 @@ README summary table is stale). CodeQL custom = {CODEQL_TOTAL}, Semgrep custom =
 {QUESTION_BANKS} banks. Custom rules are only layered on under --profile full.
 """)
 
-# 14 — SECTION
-section_slide("Part 4", "The toolchain & installation")
+# 15 — Result: precision vs raw SAST (NEW)
+s = content_slide("Result — false positives cut by 91%")
+textbox(s, Inches(0.6), Inches(1.25), Inches(12), Inches(0.45),
+        [[("OWASP-Python benchmark  ·  DeepSeek  ·  300 findings  ·  raw SAST → VulnHunterX.",
+           15, MUTE, False, True)]])
+res1 = [("87.3%", "Precision", INDIGO, "up from 37.7% (raw SAST)"),
+        ("92.4%", "F1 score", CYAN, "up from 54.7%"),
+        ("91.4%", "False positives removed", EMERALD, "of all raw-SAST false alarms")]
+x = Inches(0.6)
+for big, label, col, sub in res1:
+    cd = soft_shadow(shape(s, RR, x, Inches(1.9), Inches(3.9), Inches(2.5),
+                           fill=CARD, line=BORDER))
+    shape(s, RR, x, Inches(1.9), Inches(3.9), Inches(0.14), fill=col)
+    text_in(cd, [[(big, 52, col, True, False)],
+                 [(label, 14.5, NAVY_TX, True, False)],
+                 [(sub, 11.5, GREY, False, False)]], align=CENTER)
+    x = int(x + Inches(4.05))
+strip = soft_shadow(shape(s, RR, Inches(0.6), Inches(4.7), Inches(12.15), Inches(1.55), fill=DARK))
+text_in(strip, [
+    [("Recall held at 98.2%", 16, AMBER, True, False),
+     ("   real bugs are kept, not thrown away with the noise", 14, WHITE, False, False)],
+    [("True-positive preservation 97.4%", 16, CYAN, True, False),
+     ("   only 1.0% of findings end up 'Needs More Data'", 14, WHITE, False, False)],
+    [("Raw SAST precision was 37.7%", 16, ROSE, True, False),
+     ("   roughly 2 in 3 raw findings were false alarms before triage", 14, WHITE, False, False)],
+], align=CENTER)
+_notes(s, """
+Source: benchmarks/results/matrix_20260604_151302/deepseek/REPORT.md (Summary
+Comparison). raw-sast vs vulnhunterx on 300 OWASP-Python findings: precision
+37.7%→87.3%, F1 54.7%→92.4%, 91.4% of false positives removed while recall stays
+at 98.2%. Headline: far fewer false alarms, almost no real bugs lost.
+""")
 
-# 15 — Tool cards
+# 16 — Result: the multi-turn loop pays off (NEW)
+s = content_slide("Result — the multi-turn loop pays off")
+textbox(s, Inches(0.6), Inches(1.25), Inches(12), Inches(0.45),
+        [[("High-confidence accuracy, by how many turns the LLM took (OWASP-Python · DeepSeek).",
+           15, MUTE, False, True)]])
+c1 = soft_shadow(shape(s, RR, Inches(1.1), Inches(2.0), Inches(4.3), Inches(2.3), fill=CARD, line=BORDER))
+shape(s, RR, Inches(1.1), Inches(2.0), Inches(4.3), Inches(0.14), fill=ROSE)
+text_in(c1, [[("81.8%", 50, ROSE, True, False)],
+             [("stop after 1 turn", 15, NAVY_TX, True, False)],
+             [("commit too early, miss the defense", 11.5, GREY, False, False)]], align=CENTER)
+block_arrow(s, Inches(5.7), Inches(2.95), Inches(1.9), Inches(0.5), ORANGE)
+c2 = soft_shadow(shape(s, RR, Inches(7.9), Inches(2.0), Inches(4.3), Inches(2.3), fill=CARD, line=BORDER))
+shape(s, RR, Inches(7.9), Inches(2.0), Inches(4.3), Inches(0.14), fill=EMERALD)
+text_in(c2, [[("96.9%", 50, EMERALD, True, False)],
+             [("after a 2nd turn", 15, NAVY_TX, True, False)],
+             [("expand context, then decide", 11.5, GREY, False, False)]], align=CENTER)
+strip = soft_shadow(shape(s, RR, Inches(0.6), Inches(4.7), Inches(12.15), Inches(1.55), fill=DARK))
+text_in(strip, [
+    [("High-confidence accuracy 94.2%", 16, AMBER, True, False),
+     ("   well-calibrated over 275 high-confidence verdicts", 14, WHITE, False, False)],
+    [("Mean 2.6 turns", 16, CYAN, True, False),
+     ("   the loop expands context only when it needs to (max 5)", 14, WHITE, False, False)],
+    [("$0.40 for 300 findings", 16, EMERALD, True, False),
+     ("   on DeepSeek; $0.00 with a local Ollama model", 14, WHITE, False, False)],
+], align=CENTER)
+_notes(s, """
+Source: REPORT.md (Iteration×Confidence + Cost tables). Cleanest signal is the
+early-terminate bucket: 1-turn/High 81.8% vs 2-turn/High 96.9% — a second pass to
+expand context flips many borderline verdicts. High-confidence calibration 94.2%;
+mean 2.6 turns; $0.40 / 300 findings on DeepSeek (free on local Ollama).
+""")
+
+# 17 — Result: per-CWE + cross-model (NEW)
+s = card_grid_slide("Result — per-CWE and across models", [
+    {"head": "CWE-89 · SQLi", "body": "F1 100%", "accent": EMERALD},
+    {"head": "CWE-79 · XSS", "body": "F1 100%", "accent": EMERALD},
+    {"head": "CWE-330 · weak RNG", "body": "F1 100%", "accent": EMERALD},
+    {"head": "CWE-643 · XPath", "body": "F1 84.4%", "accent": AMBER},
+    {"head": "CWE-611 · XXE", "body": "F1 50% — hard case", "accent": ROSE},
+], cols=5, top=1.7, card_h=1.5, gap=0.2, head_size=12.5, body_size=12)
+strip = soft_shadow(shape(s, RR, Inches(0.6), Inches(3.5), Inches(12.15), Inches(2.95), fill=DARK))
+text_in(strip, [
+    [("Same approach, three models", 16, AMBER, True, False),
+     ("    OWASP-Java · VulnHunterX", 13.5, MUTE, False, True)],
+    [("", 6, WHITE, False, False)],
+    [("DeepSeek", 15, CYAN, True, False),
+     ("    F1 92.0%  ·  FP-reduction 78.6%  ·  $0.30", 14, WHITE, False, False)],
+    [("GPT-4.1-mini", 15, CYAN, True, False),
+     ("    F1 85.7%  ·  FP-reduction 58.1%  ·  $0.80", 14, WHITE, False, False)],
+    [("Ollama Qwen (local)", 15, CYAN, True, False),
+     ("    FP-reduction 100%  ·  $0.00 — runs entirely offline", 14, WHITE, False, False)],
+    [("", 6, WHITE, False, False)],
+    [("Focused slice: DeepSeek, June 2026 runs — directional, not a universal claim.",
+      12, MUTE, False, True)],
+], align=CENTER)
+_notes(s, """
+Sources: REPORT.md (Per-CWE Breakdown) and matrix_20260604_224953/COMPARISON.md
+(OWASP-Java model comparison). Easy injection classes hit F1 100%; XXE (CWE-611)
+is the honest hard case at 50%. Across models the method holds: stronger models
+give higher precision, and a local Ollama model still removes false positives at
+$0 — useful when code cannot leave the building.
+""")
+
+# 18 — SECTION
+section_slide("Part 2", "How to install & use")
+
+# 19 — Tool cards
 card_grid_slide("The four tools — what each does", [
     {"head": "CodeQL", "body": "Semantic, database-driven taint analysis — the deepest engine. Needs a DB build.", "accent": INDIGO, "pill": "core", "pill_color": INDIGO},
     {"head": "Semgrep", "body": "Fast pattern-based rules across many languages. No DB needed.", "accent": CYAN, "pill": "breadth", "pill_color": CYAN},
@@ -819,7 +989,7 @@ tree-sitter is the safety net — pure Python, ships with the pip install.
 `check-env` verifies all of them at once.
 """)
 
-# 16 — Install
+# 20 — Install
 code_slide("Install VulnHunterX", [
     "# Prerequisites: Python 3.12+, CodeQL CLI 2.15+, an LLM provider key",
     "git clone https://github.com/vinsoc-cyber/VulnHunterX.git && cd VulnHunterX",
@@ -834,7 +1004,7 @@ Exact commands from README "Install". uv is recommended but optional. Run
 check-env first — it reports which engines and provider keys are available.
 """)
 
-# 17 — Config
+# 21 — Config
 code_slide("Configuration you need to set", [
     "# .env  — provider keys + optional tool paths",
     "LLM_PROVIDER=openai            # openai | anthropic | ollama",
@@ -851,54 +1021,6 @@ code_slide("Configuration you need to set", [
 Priority: CLI args > env vars > config file > defaults. Local Ollama needs no
 key. C/C++ need a build_command; C# uses buildless extraction so it doesn't.
 """)
-
-# 18 — SECTION
-section_slide("Part 5", "Does it run on Windows?")
-
-# 19 — Windows status cards
-card_grid_slide("Windows compatibility", [
-    {"head": "VulnHunterX core", "body": "POSIX build scripts break C/C++ build automation natively", "accent": AMBER, "pill": "Partial", "pill_color": AMBER},
-    {"head": "CodeQL CLI", "body": "Official win64 binary; build cmd must be Windows-friendly", "accent": EMERALD, "pill": "Yes", "pill_color": EMERALD},
-    {"head": "Semgrep", "body": "Use Docker or WSL2 for reliable runs", "accent": ROSE, "pill": "Limited", "pill_color": ROSE},
-    {"head": "OpenGrep", "body": "Same as Semgrep — check releases / use WSL2", "accent": ROSE, "pill": "Limited", "pill_color": ROSE},
-    {"head": "tree-sitter", "body": "Pure-Python wheels — works everywhere", "accent": EMERALD, "pill": "Full", "pill_color": EMERALD},
-    {"head": "Fuzz stages 5–8", "body": "Need clang ASan/UBSan — Linux/macOS only", "accent": ROSE, "pill": "No", "pill_color": ROSE},
-    {"head": "LLM providers", "body": "HTTP-based — no platform dependency", "accent": EMERALD, "pill": "Full", "pill_color": EMERALD},
-], cols=2, top=1.5, card_h=1.05, gap=0.22, head_size=15.5, body_size=12,
-   notes="""
-Native Windows is partial. pathlib keeps paths fine, but C/C++ build automation
-writes POSIX shell scripts and fuzz stages assume clang sanitizers. CodeQL has a
-Windows binary; tree-sitter and the LLM layer are fully cross-platform.
-""")
-
-# 20 — Windows recommendation
-s = content_slide("Recommendation for Windows users")
-big = soft_shadow(shape(s, RR, Inches(0.7), Inches(1.6), Inches(11.9), Inches(1.6),
-                        fill=DARK))
-text_in(big, [[("Run VulnHunterX inside  ", 24, WHITE, False, False),
-               ("WSL2", 24, CYAN, True, False),
-               ("  (Ubuntu) or a Linux  ", 24, WHITE, False, False),
-               ("Docker", 24, CYAN, True, False),
-               ("  container.", 24, WHITE, False, False)],
-              [("Full toolchain — Semgrep, CodeQL, fuzzing — with no caveats.",
-                15, AMBER, False, False)]], align=CENTER)
-for i, (h, b, col) in enumerate([
-    ("Native Windows is fine for", "editing code · reading reports · calling the LLM", SLATE),
-    ("Linux / macOS users", "install natively — see Part 4", EMERALD),
-    ("Windows users", "wsl --install, then follow the same steps inside WSL2", CYAN)]):
-    y = int(Inches(3.55) + i * Inches(1.0))
-    cd = soft_shadow(shape(s, RR, Inches(0.7), y, Inches(11.9), Inches(0.85),
-                           fill=CARD, line=BORDER))
-    shape(s, RR, Inches(0.7), y, Inches(0.13), Inches(0.85), fill=col)
-    text_in(cd, [[(h + ":   ", 16, col, True, False), (b, 15, GREY, False, False)]],
-            align=LEFT, ml=0.3)
-_notes(s, """
-Everyone on Windows should use WSL2 — one-command install, removes every caveat.
-Don't fight native Windows for the C/C++ or fuzzing paths.
-""")
-
-# 21 — SECTION
-section_slide("Part 6", "Workshop — let's run it")
 
 # 22 — three ways
 code_slide("Three ways to start a scan", [
@@ -919,99 +1041,155 @@ Start the demo with `interactive` — it validates inputs and live-tests the
 provider so you don't fail halfway. --limit keeps the LLM cost small live.
 """)
 
-# 23 — example pipeline + contrast diagram
-s = content_slide("The fastest demo: an example pipeline")
-box = soft_shadow(shape(s, RR, Inches(0.7), Inches(1.45), Inches(7.0), Inches(3.0),
-                        fill=CODE_BG))
-for i, col in enumerate((ROSE, AMBER, EMERALD)):
-    shape(s, OVAL, Inches(0.95 + i * 0.28), Inches(1.67), Inches(0.16), Inches(0.16),
-          fill=col)
-tf = box.text_frame
-tf.word_wrap = True
-tf.vertical_anchor = TOP
-tf.margin_left = Inches(0.3)
-tf.margin_top = Inches(0.6)
-for i, line in enumerate([
-    "# real-world repo + vulnerable repo,",
-    "# full pipeline on both:",
-    "python examples/pipeline_python.py",
-    "",
-    "# smoke-test without LLM calls:",
-    "python examples/pipeline_python.py --dry-run",
-    "",
-    "# then read the report:",
-    "cat output/python/pyyaml/…/report.md",
-]):
-    p = tf.paragraphs[0] if i == 0 else tf.add_paragraph()
-    p.space_after = Pt(2)
-    _emit_code_line(p, line)
-# contrast cards on right
-c1 = soft_shadow(shape(s, RR, Inches(8.0), Inches(1.45), Inches(4.75), Inches(1.42),
-                       fill=CARD, line=BORDER))
-shape(s, RR, Inches(8.0), Inches(1.45), Inches(0.13), Inches(1.42), fill=EMERALD)
-text_in(c1, [[("PyYAML", 17, NAVY_TX, True, False), ("  — real-world", 12, GREY, False, True)],
-             [("mostly clean → false positives suppressed", 13, EMERALD, True, False)]],
-        align=LEFT, ml=0.3)
-c2 = soft_shadow(shape(s, RR, Inches(8.0), Inches(3.03), Inches(4.75), Inches(1.42),
-                       fill=CARD, line=BORDER))
-shape(s, RR, Inches(8.0), Inches(3.03), Inches(0.13), Inches(1.42), fill=ROSE)
-text_in(c2, [[("dvpwa", 17, NAVY_TX, True, False), ("  — vulnerable", 12, GREY, False, True)],
-             [("surfaces real true positives", 13, ROSE, True, False)]],
-        align=LEFT, ml=0.3)
-foot = shape(s, RR, Inches(0.7), Inches(4.75), Inches(12.05), Inches(1.5), fill=DARK)
-soft_shadow(foot)
-text_in(foot, [[("The whole value proposition in one screen:", 17, AMBER, True, False)],
-               [("the contrast between a clean real-world repo and a vulnerable one.",
-                 16, WHITE, False, False)],
-               [("Per-language scripts exist for all 8 languages.", 13, MUTE, False, True)]],
-        align=CENTER)
+# 23 — SECTION
+section_slide("Part 3", "Real example — dvpwa")
+
+# 24 — dvpwa intro + contrast (NEW)
+s = content_slide("dvpwa — a deliberately vulnerable web app")
+textbox(s, Inches(0.6), Inches(1.25), Inches(12), Inches(0.5),
+        [[("An intentionally insecure Python ", 16, GREY, False, False),
+          ("aiohttp", 16, INK, True, False),
+          (" app (github.com/anxolerd/dvpwa) — scanned next to a clean library.",
+           16, GREY, False, False)]])
+c1 = soft_shadow(shape(s, RR, Inches(0.7), Inches(2.1), Inches(5.9), Inches(2.0), fill=CARD, line=BORDER))
+shape(s, RR, Inches(0.7), Inches(2.1), Inches(0.16), Inches(2.0), fill=ROSE)
+text_in(c1, [[("dvpwa", 22, NAVY_TX, True, False), ("    vulnerable", 13, ROSE, True, True)],
+             [("SQL injection · stored XSS · weak MD5 ·", 13.5, GREY, False, False)],
+             [("missing authorization · CSRF disabled", 13.5, GREY, False, False)],
+             [("→ VulnHunterX should surface real TPs", 13.5, ROSE, True, False)]],
+        align=LEFT, ml=0.3, anchor=MID)
+c2 = soft_shadow(shape(s, RR, Inches(6.75), Inches(2.1), Inches(5.9), Inches(2.0), fill=CARD, line=BORDER))
+shape(s, RR, Inches(6.75), Inches(2.1), Inches(0.16), Inches(2.0), fill=EMERALD)
+text_in(c2, [[("pyyaml", 22, NAVY_TX, True, False), ("    real-world", 13, EMERALD, True, True)],
+             [("a mature, widely-used YAML library", 13.5, GREY, False, False)],
+             [("with no planted vulnerabilities", 13.5, GREY, False, False)],
+             [("→ false positives should be suppressed", 13.5, EMERALD, True, False)]],
+        align=LEFT, ml=0.3, anchor=MID)
+foot = soft_shadow(shape(s, RR, Inches(0.7), Inches(4.45), Inches(11.95), Inches(1.6), fill=DARK))
+text_in(foot, [[("The value proposition in one screen:", 17, AMBER, True, False)],
+               [("the vulnerable app lights up with real bugs; the clean library stays quiet.",
+                 15, WHITE, False, False)],
+               [("Ground truth (realvuln): 22 real vulnerabilities + 4 false-positive traps.",
+                 13, MUTE, False, True)]], align=CENTER)
 _notes(s, """
-This is the single best demo. The real-world repo should come back mostly clean
-(FPs suppressed) while the vulnerable repo surfaces TPs. csharp uses buildless
-CodeQL. Flags: --dry-run, --skip-clone.
+dvpwa = Damn Vulnerable Python Web App (aiohttp, anxolerd/dvpwa). We run it beside
+pyyaml — a clean real-world library — so the room sees both sides: TPs surfaced on
+dvpwa, FPs suppressed on pyyaml. The realvuln ground truth labels 22 genuine
+vulnerabilities and 4 deliberate false-positive traps; next slides give the
+commands and the answer key.
 """)
 
-# 24 — SECTION
-section_slide("Part 7", "Exercises")
+# 25 — Run the dvpwa example (NEW)
+code_slide("Run the dvpwa example", [
+    "# one command: clone + analyze + verify + report, for both repos",
+    "python examples/pipeline_python.py            # add --dry-run to preview",
+    "",
+    "# or drive just dvpwa, stage by stage:",
+    "vuln-hunter-x prepare --repo dvpwa            # clone + CodeQL DB + context",
+    "vuln-hunter-x analyze --repo dvpwa --profile extended",
+    "vuln-hunter-x verify  --repo dvpwa --limit 5 --report",
+    "",
+    "# read the verdicts the LLM produced:",
+    "cat output/python/dvpwa/verification_results/report.md",
+], notes="""
+examples/pipeline_python.py runs pyyaml + dvpwa end to end (REPOS list in the
+script). --dry-run prints the commands without calling the LLM. report.md holds
+per-finding verdicts (TP / FP / NMD) with evidence-anchored reasoning. Keep
+--limit small so a live demo stays cheap.
+""")
 
-# 25 — Exercise cards
-card_grid_slide("In-session exercises", [
-    {"head": "E1 · Green toolchain", "body": "vuln-hunter-x check-env until every engine + provider is OK. (Windows: in WSL2/Docker.)", "accent": INDIGO, "pill": "5 min", "pill_color": INDIGO},
-    {"head": "E2 · First scan", "body": "pipeline_python.py --dry-run, then a real --limit 3 run; open report.md, find 1 TP + 1 FP.", "accent": ORANGE, "pill": "core", "pill_color": ORANGE},
-    {"head": "E3 · Iterations matter", "body": "Re-run verify --max-iterations 5; compare verdicts/confidence vs the default 3.", "accent": CYAN, "pill": "loop", "pill_color": CYAN},
-    {"head": "E4 · Another language", "body": "Run examples/pipeline_go.py (or java/php) and read its report.", "accent": EMERALD, "pill": "explore", "pill_color": EMERALD},
-], cols=2, top=1.6, card_h=1.95, gap=0.3, head_size=18, body_size=13.5,
+# 26 — dvpwa baseline / answer key (NEW)
+s = card_grid_slide("dvpwa answer key — verify your results", [
+    {"head": "SQL injection · CWE-89", "body": "dao/student.py:42 — query built with Python % then execute(q)", "accent": EMERALD, "pill": "TP", "pill_color": EMERALD},
+    {"head": "Stored XSS ×5 · CWE-79", "body": "templates render unescaped — root cause autoescape=False (app.py:35)", "accent": EMERALD, "pill": "TP", "pill_color": EMERALD},
+    {"head": "Weak password hash · CWE-916", "body": "dao/user.py:41 — unsalted MD5", "accent": EMERALD, "pill": "TP", "pill_color": EMERALD},
+    {"head": "Missing authz / CSRF off", "body": "views.py (CWE-862) · csrf middleware commented out, app.py:27 (CWE-352)", "accent": EMERALD, "pill": "TP", "pill_color": EMERALD},
+    {"head": "NOT SQL injection", "body": "dao/user.py · review.py · course.py — parameterized %s / %(name)s queries", "accent": ROSE, "pill": "trap", "pill_color": ROSE},
+    {"head": "NOT XSS", "body": "student.jinja2:14 — {{ name | e }} is explicitly escaped", "accent": ROSE, "pill": "trap", "pill_color": ROSE},
+], cols=2, top=1.5, card_h=1.1, gap=0.2, head_size=15.5, body_size=12.5)
+strip = soft_shadow(shape(s, RR, Inches(0.6), Inches(5.35), Inches(12.15), Inches(1.45), fill=DARK))
+text_in(strip, [
+    [("Ground truth: 22 real vulnerabilities + 4 false-positive traps", 15, AMBER, True, False)],
+    [("Score yourself: flagging student.py SQLi = correct; flagging the parameterized DAO "
+      "queries or the escaped template = a false positive your run should suppress.",
+      13, WHITE, False, False)],
+], align=CENTER)
+_notes(s, """
+Answer key: benchmarks/datasets/realvuln/ground-truth/realvuln-dvpwa/ground-truth.json
+(22 is_vulnerable=true entries + 4 is_vulnerable=false traps). The traps are the
+teaching moment: three DAO create() methods use psycopg2 placeholders (safe) and
+student.jinja2:14 uses the | e filter — a good run must NOT report these. Students
+compare their report.md verdicts against this list.
+""")
+
+# 27 — SECTION
+section_slide("Part 4", "Homework — dvcp")
+
+# 28 — dvcp homework + run (NEW)
+code_slide("Homework — scan dvcp (Damn Vulnerable C Program)", [
+    "# config/repos.yaml already defines dvcp (C needs a build command):",
+    "#   url: github.com/hardik05/Damn_Vulnerable_C_Program",
+    "#   build_command: gcc -g -o dvcp imgRead.c",
+    "",
+    "# run the C pipeline — contrast target is c-ares (a real DNS library):",
+    "python examples/pipeline_c.py                 # add --dry-run to preview",
+    "",
+    "# or drive just dvcp, stage by stage:",
+    "vuln-hunter-x prepare --repo dvcp             # clone + build + CodeQL DB",
+    "vuln-hunter-x analyze --repo dvcp",
+    "vuln-hunter-x verify  --repo dvcp --limit 5 --report",
+    "",
+    "# stretch (Linux/macOS): fuzz the real library",
+    "python examples/pipeline_c.py --fuzz",
+], caption="Your task: run it, open the report, list the TPs and FPs — then check against the answer key.",
    notes="""
-E2 is the core skill: run + read a report. E3 shows the multi-turn loop in
-action — more iterations can flip a "Needs More Data" into a confident verdict.
+dvcp = Damn Vulnerable C Program (hardik05), a single imgRead.c. C requires a
+build_command for CodeQL DB creation — already set in config/repos.yaml.
+examples/pipeline_c.py runs c-ares (real-world) + dvcp. The --fuzz stretch runs a
+sanitizer build + libFuzzer on c-ares (Linux/macOS only). Bring your TP/FP list to
+compare against the next slide.
 """)
 
-# 26 — Homework cards
-card_grid_slide("Homework", [
-    {"head": "H1 · Scan your own code", "body": "vuln-hunter-x scan --local-path <repo> --lang <lang> --profile full", "accent": ORANGE, "pill": "do this", "pill_color": ORANGE},
-    {"head": "H2 · Compare providers", "body": "Verify the same SARIF with --provider openai vs ollama; note where verdicts differ.", "accent": INDIGO},
-    {"head": "H3 · Write a custom rule", "body": "Add to semgrep-custom/<lang>.yaml (metadata.cwe), run --profile full, then audit_rule_coverage.py --fail-on-gaps.", "accent": CYAN},
-    {"head": "H4 · Stretch (Linux/macOS)", "body": "Fuzz a C target: build-sanitized → fuzz-run on libucl.", "accent": SLATE, "pill": "optional", "pill_color": SLATE},
-], cols=2, top=1.6, card_h=1.95, gap=0.3, head_size=18, body_size=13.5,
-   notes="""
-H1 makes it real — running it on their own code. H3 teaches rule authoring +
-CWE routing and the audit script that keeps rules wired to guided questions.
+# 29 — dvcp baseline / answer key (NEW)
+s = card_grid_slide("dvcp answer key — what to expect", [
+    {"head": "Integer overflow · CWE-190", "body": "width + height, width * height", "accent": EMERALD, "pill": "TP", "pill_color": EMERALD},
+    {"head": "Integer underflow · CWE-191", "body": "width - height + 100", "accent": EMERALD, "pill": "TP", "pill_color": EMERALD},
+    {"head": "Heap buffer overflow · CWE-122", "body": "memcpy into a buffer sized from the overflowed value", "accent": EMERALD, "pill": "TP", "pill_color": EMERALD},
+    {"head": "Double-free · CWE-415", "body": "free(buff1) again when size1 % 2 == 0", "accent": EMERALD, "pill": "TP", "pill_color": EMERALD},
+    {"head": "Use-after-free · CWE-416", "body": "buff1[0]='a' after free when size1 % 3 == 0", "accent": EMERALD, "pill": "TP", "pill_color": EMERALD},
+    {"head": "OOB read / write · CWE-125/787", "body": "buff3[size3], buff4[size3] past the bounds", "accent": EMERALD, "pill": "TP", "pill_color": EMERALD},
+    {"head": "Divide-by-zero · CWE-369", "body": "width / height when height == 0", "accent": EMERALD, "pill": "TP", "pill_color": EMERALD},
+    {"head": "Leak + infinite recursion", "body": "CWE-401: buff4=0 without free · CWE-674: stack_operation() recurses forever", "accent": EMERALD, "pill": "TP", "pill_color": EMERALD},
+], cols=2, top=1.4, card_h=0.9, gap=0.16, head_size=14, body_size=11.5)
+strip = soft_shadow(shape(s, RR, Inches(0.6), Inches(5.5), Inches(12.15), Inches(1.3), fill=DARK))
+text_in(strip, [
+    [("All bugs live in ProcessImage()", 15, AMBER, True, False),
+     ("  — reachable from attacker-controlled image-header fields (width / height / data).", 13.5, WHITE, False, False)],
+    [("Contrast: c-ares (production DNS library) should come back mostly false positives.", 13.5, CYAN, True, False)],
+    [("Answer key derived from the upstream imgRead.c source (external repo).", 12, MUTE, False, True)],
+], align=CENTER)
+_notes(s, """
+dvcp's imgRead.c packs ~15 memory-safety bugs into one ProcessImage() function, all
+reachable from attacker-controlled image-header fields. This is the C counterpart to
+the dvpwa key: students list what their run flagged on dvcp (should be these
+memory-safety classes) and confirm c-ares stays mostly quiet. This key is from the
+upstream source, not the realvuln (Python-only) ground truth.
 """)
 
-# 27 — Recap
+# 30 — Recap
 s = content_slide("Recap & references")
 points = [
-    ("SAST over-approximates", "VulnHunterX adds an LLM triage stage, with evidence", INDIGO),
-    ("Pipeline", "prepare → analyze → verify → report", CYAN),
-    (f"{CODEQL_TOTAL} CodeQL + {SEMGREP_TOTAL} Semgrep rules", "8 languages · 5 profiles", AMBER),
-    ("Windows", "use WSL2 / Docker for the full toolchain", SLATE),
+    ("What it is", "SAST finds candidates; a multi-turn LLM verifies them with evidence", INDIGO),
+    ("Results", "OWASP-Python: precision 37.7% → 87.3%, 91.4% of false positives removed", EMERALD),
+    ("Install & use", "prepare → analyze → verify → report  ·  vuln-hunter-x interactive", CYAN),
+    ("Practice", "dvpwa example today · dvcp homework — check both against the answer keys", ORANGE),
 ]
 y = Inches(1.55)
 for h, b, col in points:
     cd = soft_shadow(shape(s, RR, Inches(0.7), y, Inches(11.9), Inches(0.82),
                            fill=CARD, line=BORDER))
     shape(s, RR, Inches(0.7), y, Inches(0.13), Inches(0.82), fill=col)
-    text_in(cd, [[(h + ":   ", 16, col, True, False), (b, 15, GREY, False, False)]],
+    text_in(cd, [[(h + ":   ", 16, col, True, False), (b, 14, GREY, False, False)]],
             align=LEFT, ml=0.3)
     y = int(y + Inches(0.95))
 start = soft_shadow(shape(s, RR, Inches(0.7), y, Inches(11.9), Inches(0.82), fill=DARK))
@@ -1021,8 +1199,9 @@ textbox(s, Inches(0.7), int(y + Inches(0.95)), Inches(12), Inches(0.5),
         [[("References:  Vulnhalla (CyberArk) · CodeQL docs · Semgrep docs · SARIF spec · repo README + config/RULES.md",
            12.5, MUTE, False, True)]], align=CENTER)
 _notes(s, """
-Close on the one command to remember: vuln-hunter-x interactive. References are
-in the repo README. Point them at WORKSHOP.md for copy-paste commands.
+Close on the one command to remember: vuln-hunter-x interactive. dvpwa was the
+worked example; dvcp is the take-home — both have answer keys to self-check.
+References are in the repo README and WORKSHOP.md.
 """)
 
 

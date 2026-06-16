@@ -1,8 +1,9 @@
-# VulnHunterX — 60-minute presentation
+# VulnHunterX — workshop presentation
 
-A developer-facing workshop deck on what VulnHunterX is, how it works, how to
-install the toolchain (including on Windows), plus hands-on exercises and
-homework.
+A developer-facing workshop deck in four parts: what VulnHunterX is (features,
+architecture, methodology, benchmark results), how to install and use it, a real
+worked example on dvpwa, and take-home homework on dvcp — each with a baseline
+answer key so attendees can self-verify their scan results.
 
 ## Files
 
@@ -23,19 +24,20 @@ This rewrites `VulnHunterX-60min.pptx` and prints the rule counts it read from
 `config/`. Open the result in PowerPoint, LibreOffice Impress, or Google Slides.
 **Speaker notes** are attached to every slide (the 60-minute talk track).
 
-## Timing budget (~60 min)
+## Structure (4 parts, ~60 min)
 
-| Section | Slides | Time |
-|---|---|---|
-| Opening + agenda | 1–2 | 3 min |
-| The problem | 3–4 | 5 min |
-| What VulnHunterX is | 5–8 | 5 min |
-| How it works | 9–14 | 12 min |
-| Toolchain & install | 15–18 | 10 min |
-| Windows support | 19–21 | 5 min |
-| Workshop / live demo | 22–24 | 10 min |
-| Exercises | 25–26 | 5 min |
-| Homework + wrap-up | 27–28 | 5 min |
+| Part | Section | Slides | Time |
+|---|---|---|---|
+| — | Opening + agenda | 1–2 | 3 min |
+| 1 | VulnHunterX introduction — features, architecture, methodology, results | 3–17 | 22 min |
+| 2 | How to install & use | 18–22 | 10 min |
+| 3 | Real example — dvpwa (with baseline answer key) | 23–26 | 12 min |
+| 4 | Homework — dvcp (with baseline answer key) | 27–30 | 8 min |
+
+Part 1 includes 3 benchmark **result** slides (sourced from `benchmarks/results/`) and
+the guided-question methodology slides. Parts 3 and 4 each end with a **baseline answer
+key** — the known true positives and false-positive traps — so attendees can score their
+own runs (dvpwa key from the realvuln ground truth; dvcp key from the upstream `imgRead.c`).
 
 ## Why counts are computed, not hardcoded
 
